@@ -37,22 +37,6 @@ void main()
 
   vec3 worldPos = gl_WorldRayOriginEXT + gl_WorldRayDirectionEXT * gl_HitTEXT;
 
-  /*
-  Sphere instance = allSpheres.i[gl_PrimitiveID];
-
-  // Computing the normal at hit position
-  vec3 worldNrm = normalize(worldPos - instance.center);
-
-  // Computing the normal for a cube
-  if(gl_HitKindEXT == KIND_CUBE)  // Aabb
-  {
-    vec3  absN = abs(worldNrm);
-    float maxC = max(max(absN.x, absN.y), absN.z);
-    worldNrm   = (maxC == absN.x) ? vec3(sign(worldNrm.x), 0, 0) :
-                                  (maxC == absN.y) ? vec3(0, sign(worldNrm.y), 0) : vec3(0, 0, sign(worldNrm.z));
-  }
-  */
-
   // @author Josias
   // TODO: get the worldNrm as a payload from the intersection shader
   vec3 worldNrm = vec3(0,1,0);

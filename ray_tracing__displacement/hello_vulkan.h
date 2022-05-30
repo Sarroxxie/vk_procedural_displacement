@@ -153,18 +153,7 @@ public:
   // Push constant for ray tracer
   PushConstantRay m_pcRay{};
 
-  // for custom intersections
-  //std::vector<Sphere> m_spheres;
-  //nvvk::Buffer        m_spheresBuffer;
-  //nvvk::Buffer        m_spheresAabbBuffer;
-  //nvvk::Buffer        m_spheresMatColorBuffer;
-  //nvvk::Buffer        m_spheresMatIndexBuffer;
-
-  //void createSpheres(uint32_t nbSpheres);
-  //auto sphereToVkGeometryKHR();
-
   // @author Josias
-  //void                  createSingleSphere(nvmath::vec3f center, float radius, nvmath::vec3f color);
 
   std::vector<Triangle> m_triangles;
   nvvk::Buffer          m_trianglesBuffer;

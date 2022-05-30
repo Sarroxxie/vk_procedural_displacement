@@ -15,6 +15,5 @@ layout(push_constant) uniform _PushConstantRay
 
 void main()
 {
-    // slightly darker clear color to differentioate the between raster and ray tracing
-    prd.hitValue = pcRay.clearColor.xyz * 0.8;
+    prd.hitValue = pcRay.clearColor.xyz;
 }

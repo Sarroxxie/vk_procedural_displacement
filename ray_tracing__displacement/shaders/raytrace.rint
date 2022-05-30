@@ -9,13 +9,6 @@
 #include "raycommon.glsl"
 #include "wavefront.glsl"
 
-/* 
-// retrieve spheres
-layout(set = 1, binding = eImplicit, scalar) buffer allSpheres_
-{
-  Sphere allSpheres[];
-};
-*/
 // retrieve triangles
 layout(set = 1, binding = eImplicit, scalar) buffer allTriangles_
 {
@@ -29,26 +22,6 @@ struct Ray
   vec3 origin;
   vec3 direction;
 };
-
-/*
-// ray-sphere intersection
-float hitSphere(const Sphere s, const Ray r)
-{
-  vec3  oc           = r.origin - s.center;
-  float a            = dot(r.direction, r.direction);
-  float b            = 2.0 * dot(oc, r.direction);
-  float c            = dot(oc, oc) - s.radius * s.radius;
-  float discriminant = b * b - 4 * a * c;
-  if(discriminant < 0)
-  {
-    return -1.0;
-  }
-  else
-  {
-    return (-b - sqrt(discriminant)) / (2.0 * a);
-  }
-}
-*/
 
 // Ray-AABB intersection
 float hitAabb(const Aabb aabb, const Ray r)
@@ -91,38 +64,6 @@ void main()
   Ray ray;
   ray.origin    = gl_WorldRayOriginEXT;
   ray.direction = gl_WorldRayDirectionEXT;
-
-  /*
-  // Sphere data
-  Sphere sphere = allSpheres[gl_PrimitiveID];
-
-  float tHit    = -1;
-  // @author Josias
-  //int   hitKind = gl_PrimitiveID % 2 == 0 ? KIND_SPHERE : KIND_CUBE;
-  int hitKind = KIND_SPHERE;
-  // \@author Josias
-
-  if(hitKind == KIND_SPHERE)
-  {
-    // Sphere intersection
-    tHit = hitSphere(sphere, ray);
-
-    // @author Josias
-    vec2 texCoord = vec2(0.5, 0.5);
-    vec3 tex = texture(textureSamplers[nonuniformEXT(0)], texCoord).xyz;
-
-    tHit = tex.x > 0.5 ? tHit : -1;
-    // \@author Josias
-  }
-  else
-  {
-    // AABB intersection
-    Aabb aabb;
-    aabb.minimum = sphere.center - vec3(sphere.radius);
-    aabb.maximum = sphere.center + vec3(sphere.radius);
-    tHit         = hitAabb(aabb, ray);
-  }
-  */
 
   Triangle triangle = allTriangles[gl_PrimitiveID];
 

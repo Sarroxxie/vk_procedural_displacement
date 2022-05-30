@@ -91,11 +91,6 @@ int main(int argc, char** argv)
 
   // Setup camera
   CameraManip.setWindowSize(SAMPLE_WIDTH, SAMPLE_HEIGHT);
-  // for cube
-  //CameraManip.setLookat(nvmath::vec3f(2.0f, 2.0f, 2.0f), nvmath::vec3f(0, 0, 0), nvmath::vec3f(0, 1, 0));
-  // for medieval house
-  //CameraManip.setLookat(nvmath::vec3f(7.0f, 7.0f, 7.0f), nvmath::vec3f(0, 1, 0), nvmath::vec3f(0, 1, 0));
-  // for intersection
   CameraManip.setLookat(nvmath::vec3f(20, 20, 20), nvmath::vec3f(0, 1, 0), nvmath::vec3f(0, 1, 0));
 
   // Setup Vulkan
@@ -170,16 +165,12 @@ int main(int argc, char** argv)
   helloVk.initGUI(0);  // Using sub-pass 0
 
   // Creation of the example
-  //helloVk.loadModel(nvh::findFile("media/scenes/cube_multi.obj", defaultSearchPaths, true));
   helloVk.loadModel(nvh::findFile("media/scenes/Medieval_building.obj", defaultSearchPaths, true));
   //helloVk.loadModel(nvh::findFile("media/scenes/drone_vulkan_rt.obj", defaultSearchPaths, true));
   //helloVk.loadModel(nvh::findFile("media/scenes/plane.obj", defaultSearchPaths, true));
   //helloVk.loadModel(nvh::findFile("media/scenes/debug_plane.obj", defaultSearchPaths, true));
   // @author Josias
-  nvmath::vec3f center = nvmath::vec3f(0.f, 6.f, 0.f);
-  float         radius = 5.5f;
   nvmath::vec3f color  = nvmath::vec3f(0.3f, 0.2f, 0.7f);
-  //helloVk.createSingleSphere(center, radius, color);
 
   float         dispAmount = 1;
   nvmath::vec3f v0         = nvmath::vec3f(-20, 0, -20);
