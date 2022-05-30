@@ -1,0 +1,135 @@
+#version 460
+#extension GL_EXT_ray_tracing : require
+#extension GL_EXT_nonuniform_qualifier : enable
+#extension GL_EXT_scalar_block_layout : enable
+#extension GL_GOOGLE_include_directive : enable
+#extension GL_EXT_shader_explicit_arithmetic_types_int64 : require
+#extension GL_EXT_buffer_reference2 : require
+
+#include "raycommon.glsl"
+#include "wavefront.glsl"
+
+/* 
+// retrieve spheres
+layout(set = 1, binding = eImplicit, scalar) buffer allSpheres_
+{
+  Sphere allSpheres[];
+};
+*/
+// retrieve triangles
+layout(set = 1, binding = eImplicit, scalar) buffer allTriangles_
+{
+  Triangle allTriangles[];
+};
+layout(set = 1, binding = eTextures) uniform sampler2D textureSamplers[];
+
+
+struct Ray
+{
+  vec3 origin;
+  vec3 direction;
+};
+
+/*
+// ray-sphere intersection
+float hitSphere(const Sphere s, const Ray r)
+{
+  vec3  oc           = r.origin - s.center;
+  float a            = dot(r.direction, r.direction);
+  float b            = 2.0 * dot(oc, r.direction);
+  float c            = dot(oc, oc) - s.radius * s.radius;
+  float discriminant = b * b - 4 * a * c;
+  if(discriminant < 0)
+  {
+    return -1.0;
+  }
+  else
+  {
+    return (-b - sqrt(discriminant)) / (2.0 * a);
+  }
+}
+*/
+
+// Ray-AABB intersection
+float hitAabb(const Aabb aabb, const Ray r)
+{
+  vec3  invDir = 1.0 / r.direction;
+  vec3  tbot   = invDir * (aabb.minimum - r.origin);
+  vec3  ttop   = invDir * (aabb.maximum - r.origin);
+  vec3  tmin   = min(ttop, tbot);
+  vec3  tmax   = max(ttop, tbot);
+  float t0     = max(tmin.x, max(tmin.y, tmin.z));
+  float t1     = min(tmax.x, min(tmax.y, tmax.z));
+  return t1 > max(t0, 0.0) ? t0 : -1.0;
+}
+
+// Ray-Triangle intersection
+float hitTriangle(const Triangle t, const Ray r)
+{
+  float eps = 0.000001;
+  vec3 e1 = t.posB - t.posA;
+  vec3 e2 = t.posC - t.posA;
+  vec3 q = cross(r.direction, e2);
+  float a = dot(e1, q);
+  if (a > -eps && a < eps)
+    return -1;
+  float f = 1/a;
+  vec3 s = r.origin - t.posA;
+  float u = f * dot(s, q);
+  if (u < 0)
+    return -1;
+  vec3 z = cross(s, e1);
+  float v = f * dot(r.direction, z);
+  if (v < 0 || u + v > 1)
+    return -1;
+  float tHit = f * dot(e2, z);
+  return tHit;
+}
+
+void main()
+{
+  Ray ray;
+  ray.origin    = gl_WorldRayOriginEXT;
+  ray.direction = gl_WorldRayDirectionEXT;
+
+  /*
+  // Sphere data
+  Sphere sphere = allSpheres[gl_PrimitiveID];
+
+  float tHit    = -1;
+  // @author Josias
+  //int   hitKind = gl_PrimitiveID % 2 == 0 ? KIND_SPHERE : KIND_CUBE;
+  int hitKind = KIND_SPHERE;
+  // \@author Josias
+
+  if(hitKind == KIND_SPHERE)
+  {
+    // Sphere intersection
+    tHit = hitSphere(sphere, ray);
+
+    // @author Josias
+    vec2 texCoord = vec2(0.5, 0.5);
+    vec3 tex = texture(textureSamplers[nonuniformEXT(0)], texCoord).xyz;
+
+    tHit = tex.x > 0.5 ? tHit : -1;
+    // \@author Josias
+  }
+  else
+  {
+    // AABB intersection
+    Aabb aabb;
+    aabb.minimum = sphere.center - vec3(sphere.radius);
+    aabb.maximum = sphere.center + vec3(sphere.radius);
+    tHit         = hitAabb(aabb, ray);
+  }
+  */
+
+  Triangle triangle = allTriangles[gl_PrimitiveID];
+
+  float tHit = hitTriangle(triangle, ray);
+  int hitKind = KIND_TRIANGLE;
+
+  // Report hit point
+  if(tHit > 0)
+    reportIntersectionEXT(tHit, hitKind);
+}

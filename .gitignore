@@ -1,0 +1,5 @@
+**/spv/*.spv
+/build/*
+/out/build/x64-Debug
+/.vs
+/build
