@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.9.6 FATAL_ERROR)
-project(vk_raytracing_tutorial)
+project(vk_procedural_displacement)
 
 #--------------------------------------------------------------------------------------------------
 # look for nvpro_core 1) as a sub-folder 2) at some other locations
