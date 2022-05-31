@@ -10,5 +10,5 @@ Ke 0.000000 0.000000 0.000000
 Ni 1.450000
 d 1.000000
 illum 0
-map_Kd checkerboard texture.png
-disp noise heightmap.png
+map_Kd checkerboard_texture.png
+disp noise_heightmap.png

@@ -135,15 +135,10 @@ struct Aabb
 // @author Josias
 struct Triangle
 {
-  vec3 posA;
-  vec3 posB;
-  vec3 posC;
-  vec3 normA;
-  vec3 normB;
-  vec3 normC;
-  vec2 texCoordA;
-  vec2 texCoordB;
-  vec2 texCoordC;
+  Vertex v0;
+  Vertex v1;
+  Vertex v2;
+  int  txtOffset;
 };
 // \@author Josias
 

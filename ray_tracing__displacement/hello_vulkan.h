@@ -161,7 +161,7 @@ public:
   nvvk::Buffer          m_trianglesMatColorBuffer;
   nvvk::Buffer          m_trianglesMatIndexBuffer;
 
-  void createCustomTriangles(std::vector<Triangle> triangles, float dispAmount, nvmath::vec3f color);
+  void createCustomTriangles(std::vector<Triangle> triangles, float dispAmount, nvmath::vec3f color, std::string texture);
   auto triangleToVkGeometryKHR();
 
 private:

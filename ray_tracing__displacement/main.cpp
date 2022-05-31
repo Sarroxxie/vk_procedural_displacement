@@ -171,38 +171,44 @@ int main(int argc, char** argv)
   //helloVk.loadModel(nvh::findFile("media/scenes/debug_plane.obj", defaultSearchPaths, true));
   // @author Josias
   nvmath::vec3f color  = nvmath::vec3f(0.3f, 0.2f, 0.7f);
+  nvmath::vec3f nrm   = nvmath::vec3f(0, 1, 0);
+  std::string   texturePath = "noise_heightmap.png";
 
-  float         dispAmount = 1;
-  nvmath::vec3f v0         = nvmath::vec3f(-20, 0, -20);
-  nvmath::vec3f v1         = nvmath::vec3f(-20, 0, 20);
-  nvmath::vec3f v2         = nvmath::vec3f(20, 0, -20);
-  nvmath::vec3f v3         = nvmath::vec3f(20, 0, 20);
-  Triangle      t;
-  t.posA      = v0;
-  t.posB      = v1;
-  t.posC      = v2;
-  t.normA     = nvmath::vec3f(0, 1, 0);
-  t.normB     = nvmath::vec3f(0, 1, 0);
-  t.normC     = nvmath::vec3f(0, 1, 0);
-  t.texCoordA = nvmath::vec2f(0, 0);
-  t.texCoordB = nvmath::vec2f(0, 1);
-  t.texCoordC = nvmath::vec2f(1, 0);
-  Triangle t2;
-  t2.posA      = v1;
-  t2.posB      = v2;
-  t2.posC      = v3;
-  t2.normA     = nvmath::vec3f(0, 1, 0);
-  t2.normB     = nvmath::vec3f(0, 1, 0);
-  t2.normC     = nvmath::vec3f(0, 1, 0);
-  t2.texCoordA = nvmath::vec2f(0, 0);
-  t2.texCoordB = nvmath::vec2f(0, 1);
-  t2.texCoordC = nvmath::vec2f(1, 0);
+  float  dispAmount = 1;
+  Vertex v0, v1, v2, v3;
+  v0.pos      = nvmath::vec3f(-20, 0, -20);
+  v0.nrm      = nrm;
+  v0.color    = color;
+  v0.texCoord = nvmath::vec2f(0, 1);
+
+  v1.pos      = nvmath::vec3f(-20, 0, 20);
+  v1.nrm      = nrm;
+  v1.color    = color;
+  v1.texCoord = nvmath::vec2f(1, 1);
+
+  v2.pos      = nvmath::vec3f(20, 0, -20);
+  v2.nrm      = nrm;
+  v2.color    = color;
+  v2.texCoord = nvmath::vec2f(0, 0);
+
+  v3.pos      = nvmath::vec3f(20, 0, 20);
+  v3.nrm      = nrm;
+  v3.color    = color;
+  v3.texCoord = nvmath::vec2f(1, 0);
+
+  Triangle t0;
+  t0.v0 = v0;
+  t0.v1 = v1;
+  t0.v2 = v2;
+  Triangle t1;
+  t1.v0 = v1;
+  t1.v1 = v2;
+  t1.v2 = v3;
   std::vector<Triangle> triangles;
-  triangles.emplace_back(t2);
-  triangles.emplace_back(t);
+  triangles.emplace_back(t1);
+  triangles.emplace_back(t0);
 
-  helloVk.createCustomTriangles(triangles, dispAmount, color);
-  //helloVk.createSpheres(1);
+  helloVk.createCustomTriangles(triangles, dispAmount, color, texturePath);
 
   // \@author Josias
 

@@ -694,15 +694,18 @@ auto HelloVulkan::triangleToVkGeometryKHR()
 // @author Josias
 // Creates triangle data on GPU for later use inside of the shaders.
 //
-void HelloVulkan::createCustomTriangles(std::vector<Triangle> triangles, float dispAmount, nvmath::vec3f color)
+void HelloVulkan::createCustomTriangles(std::vector<Triangle> triangles, float dispAmount, nvmath::vec3f color, std::string texture)
 {
-  uint32_t      nbTriangles = triangles.size();
+  std::vector<std::string> texturePaths{texture};
+  const std::vector<std::string>& textures = texturePaths;
+  uint32_t nbTriangles = triangles.size();
 
   // All Triangles
   m_triangles.resize(nbTriangles);
   // TODO: should a copy be created and then added to the array?
   for(uint32_t i = 0; i < nbTriangles; i++)
   {
+    triangles.at(i).txtOffset = static_cast<uint32_t>(m_textures.size());
     m_triangles[i] = std::move(triangles.at(i));
   }
 
@@ -740,6 +743,8 @@ void HelloVulkan::createCustomTriangles(std::vector<Triangle> triangles, float d
       m_alloc.createBuffer(cmdBuf, matIdx, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT);
   m_trianglesMatColorBuffer =
       m_alloc.createBuffer(cmdBuf, materials, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT);
+
+  createTextureImages(cmdBuf, textures);
   genCmdBuf.submitAndWait(cmdBuf);
 
   // Debug information
@@ -1088,16 +1093,16 @@ void HelloVulkan::raytrace(const VkCommandBuffer& cmdBuf, const nvmath::vec4f& c
 Aabb HelloVulkan::createAabbFromTriangle(Triangle t, float dispAmount) {
     Aabb aabb;
     // displace into normal direction
-    nvmath::vec3f extA = t.posA + dispAmount * t.normA;
-    nvmath::vec3f extB = t.posB + dispAmount * t.normB;
-    nvmath::vec3f extC = t.posC + dispAmount * t.normC;
+    nvmath::vec3f extA = t.v0.pos + dispAmount * t.v0.nrm;
+    nvmath::vec3f extB = t.v1.pos + dispAmount * t.v1.nrm;
+    nvmath::vec3f extC = t.v2.pos + dispAmount * t.v2.nrm;
 
     for(uint32_t i = 0; i < 3; i++)
     {
       aabb.minimum[i] =
-          std::min(std::min(std::min(t.posA[i], t.posB[i]), std::min(t.posC[i], extA[i])), std::min(extB[i], extC[i]));
+          std::min(std::min(std::min(t.v0.pos[i], t.v1.pos[i]), std::min(t.v2.pos[i], extA[i])), std::min(extB[i], extC[i]));
       aabb.maximum[i] =
-          std::max(std::max(std::max(t.posA[i], t.posB[i]), std::max(t.posC[i], extA[i])), std::max(extB[i], extC[i]));
+          std::max(std::max(std::max(t.v0.pos[i], t.v1.pos[i]), std::max(t.v2.pos[i], extA[i])), std::max(extB[i], extC[i]));
     }
     return aabb;
 }
