@@ -403,12 +403,6 @@ void HelloVulkan::destroyResources()
   vkDestroyPipelineLayout(m_device, m_rtPipelineLayout, nullptr);
   m_alloc.destroy(m_rtSBTBuffer);
 
-  // #Intersection
-  //m_alloc.destroy(m_spheresBuffer);
-  //m_alloc.destroy(m_spheresAabbBuffer);
-  //m_alloc.destroy(m_spheresMatColorBuffer);
-  //m_alloc.destroy(m_spheresMatIndexBuffer);
-
   // @author Josias
   m_alloc.destroy(m_trianglesBuffer);
   m_alloc.destroy(m_trianglesAabbBuffer);
@@ -781,10 +775,8 @@ void HelloVulkan::createBottomLevelAS()
 
   // @author Josias
   // Triangles
-  {
-    auto blas = triangleToVkGeometryKHR();
-    allBlas.emplace_back(blas);
-  }
+  auto blas = triangleToVkGeometryKHR();
+  allBlas.emplace_back(blas);
   // \@author Josias
 
   m_rtBuilder.buildBlas(allBlas, VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_TRACE_BIT_KHR);
@@ -949,7 +941,8 @@ void HelloVulkan::createRtPipeline()
 
 
   // Push constant: we want to be able to update constants used by the shaders
-  VkPushConstantRange pushConstant{VK_SHADER_STAGE_RAYGEN_BIT_KHR | VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR | VK_SHADER_STAGE_MISS_BIT_KHR,
+  VkPushConstantRange pushConstant{VK_SHADER_STAGE_RAYGEN_BIT_KHR | VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR
+                                       | VK_SHADER_STAGE_MISS_BIT_KHR | VK_SHADER_STAGE_INTERSECTION_BIT_KHR,
                                    0, sizeof(PushConstantRay)};
 
 
@@ -1073,6 +1066,10 @@ void HelloVulkan::raytrace(const VkCommandBuffer& cmdBuf, const nvmath::vec4f& c
   m_pcRay.lightPosition  = m_pcRaster.lightPosition;
   m_pcRay.lightIntensity = m_pcRaster.lightIntensity;
   m_pcRay.lightType      = m_pcRaster.lightType;
+
+  // @author Josias
+  m_pcRay.displacementAmount = m_pcRaster.displacementAmount;
+  // \@author Josias
 
   std::vector<VkDescriptorSet> descSets{m_rtDescSet, m_descSet};
   vkCmdBindPipeline(cmdBuf, VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR, m_rtPipeline);

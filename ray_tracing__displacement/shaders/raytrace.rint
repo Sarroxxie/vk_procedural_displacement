@@ -16,6 +16,8 @@ layout(set = 1, binding = eImplicit, scalar) buffer allTriangles_
 };
 layout(set = 1, binding = eTextures) uniform sampler2D textureSamplers[];
 
+layout(push_constant) uniform _PushConstantRay { PushConstantRay pcRay; };
+
 
 struct Ray
 {
@@ -69,13 +71,14 @@ void main()
 
   vec3 hit = hitTriangle(triangle, ray);
   float tHit = hit.z;
-  int hitKind = KIND_TRIANGLE;
   vec2 texCoord = triangle.v0.texCoord * (1 - hit.x - hit.y) + triangle.v1.texCoord * hit.x + triangle.v2.texCoord * hit.y;
 
+  // sample displacement texture
   float mipLevel = 0;
   vec3 diffuse = textureLod(textureSamplers[nonuniformEXT(triangle.txtOffset)], texCoord, mipLevel).xyz;
-  bool black = diffuse.x < 0.2 && diffuse.y < 0.2 && diffuse.z < 0.2;
+
+  bool mask = diffuse.x < pcRay.displacementAmount;// && diffuse.y < 0.2 && diffuse.z < 0.2;
   // Report hit point
-  if(tHit > 0 && black)
-    reportIntersectionEXT(tHit, hitKind);
+  if(tHit > 0 && mask)
+    reportIntersectionEXT(tHit, KIND_TRIANGLE);
 }

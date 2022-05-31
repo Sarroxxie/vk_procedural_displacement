@@ -76,7 +76,8 @@ public:
       {10.f, 15.f, 8.f},  // light position
       0,                  // instance Id
       100.f,              // light intensity
-      0                   // light type
+      0,                  // light type
+      0.5f                   // displacement amount (@author Josias)
   };
 
   // Array of objects and instances in the scene

@@ -53,14 +53,6 @@ void ObjLoader::loadModel(const std::string& filename)
       m.textureID = static_cast<int>(m_textures.size()) - 1;
     }
 
-    // @author Josias
-    //if(!material.displacement_texname.empty())
-    //{
-    //  m_textures.push_back(material.displacement_texname);
-    //  m.textureID = m.textureID = static_cast<int>(m_textures.size()) - 1;
-    //}
-    // \@author Josias
-
     m_materials.emplace_back(m);
   }
 

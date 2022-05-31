@@ -80,6 +80,10 @@ struct PushConstantRaster
   uint  objIndex;
   float lightIntensity;
   int   lightType;
+
+  // @author Josias
+  float displacementAmount;
+  // \@author Josias
 };
 
 
@@ -90,6 +94,10 @@ struct PushConstantRay
   vec3  lightPosition;
   float lightIntensity;
   int   lightType;
+
+  // @author Josias
+  float displacementAmount;
+  // \@author Josias
 };
 
 struct Vertex  // See ObjLoader, copy of VertexObj, could be compressed for device

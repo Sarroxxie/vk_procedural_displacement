@@ -54,6 +54,9 @@ static void onErrorCallback(int error, const char* description)
 void renderUI(HelloVulkan& helloVk)
 {
   ImGuiH::CameraWidget();
+  // @author Josias
+  ImGui::SliderFloat("Displacement Amount", &helloVk.m_pcRaster.displacementAmount, 0.f, 1.f);
+  // \@author Josias
   if(ImGui::CollapsingHeader("Light"))
   {
     ImGui::RadioButton("Point", &helloVk.m_pcRaster.lightType, 0);
@@ -165,7 +168,7 @@ int main(int argc, char** argv)
   helloVk.initGUI(0);  // Using sub-pass 0
 
   // Creation of the example
-  helloVk.loadModel(nvh::findFile("media/scenes/Medieval_building.obj", defaultSearchPaths, true));
+  //helloVk.loadModel(nvh::findFile("media/scenes/Medieval_building.obj", defaultSearchPaths, true));
   //helloVk.loadModel(nvh::findFile("media/scenes/drone_vulkan_rt.obj", defaultSearchPaths, true));
   //helloVk.loadModel(nvh::findFile("media/scenes/plane.obj", defaultSearchPaths, true));
   //helloVk.loadModel(nvh::findFile("media/scenes/debug_plane.obj", defaultSearchPaths, true));
@@ -173,6 +176,7 @@ int main(int argc, char** argv)
   nvmath::vec3f color  = nvmath::vec3f(0.3f, 0.2f, 0.7f);
   nvmath::vec3f nrm   = nvmath::vec3f(0, 1, 0);
   std::string   texturePath = "noise_heightmap.png";
+  //std::string   texturePath = "checkerboard_texture.png";
 
   float  dispAmount = 1;
   Vertex v0, v1, v2, v3;
