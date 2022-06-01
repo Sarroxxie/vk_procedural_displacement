@@ -18,6 +18,9 @@ layout(set = 1, binding = eTextures) uniform sampler2D textureSamplers[];
 
 layout(push_constant) uniform _PushConstantRay { PushConstantRay pcRay; };
 
+const int MAX_STEPS = 600;
+const float STEP_SIZE = 0.1;
+
 
 struct Ray
 {
@@ -69,6 +72,25 @@ void main()
 
   Triangle triangle = allTriangles[gl_PrimitiveID];
 
+  float newHit = -1;
+  Ray march;
+  march.origin = ray.origin;
+  march.direction = ray.direction;
+
+  for (int i = 0; i < MAX_STEPS; i++) {
+    march.origin += STEP_SIZE * march.direction;
+    Ray intersect;
+    intersect.origin = march.origin;
+    intersect.direction = vec3(0,-1,0);
+    vec3 baryzentrics = hitTriangle(triangle, intersect);
+    vec2 texCoord = triangle.v0.texCoord * (1 - baryzentrics.x - baryzentrics.y) + triangle.v1.texCoord * baryzentrics.x + triangle.v2.texCoord * baryzentrics.y;
+    float height = textureLod(textureSamplers[nonuniformEXT(triangle.txtOffset)], texCoord, 0).x * pcRay.displacementAmount;
+    if (march.origin.y < height) {
+      newHit = STEP_SIZE * i;
+      break;
+    }
+  }
+  /*
   vec3 hit = hitTriangle(triangle, ray);
   float tHit = hit.z;
   vec2 texCoord = triangle.v0.texCoord * (1 - hit.x - hit.y) + triangle.v1.texCoord * hit.x + triangle.v2.texCoord * hit.y;
@@ -81,4 +103,8 @@ void main()
   // Report hit point
   if(tHit > 0 && mask)
     reportIntersectionEXT(tHit, KIND_TRIANGLE);
+
+  */
+  if (newHit > 0)
+    reportIntersectionEXT(newHit, KIND_TRIANGLE);
 }
