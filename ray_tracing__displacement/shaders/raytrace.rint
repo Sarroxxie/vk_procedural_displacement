@@ -9,6 +9,9 @@
 #include "raycommon.glsl"
 #include "wavefront.glsl"
 
+// used between intersection shader and closest-hit shader (can only be one attribute -> may need struct later)
+hitAttributeEXT vec3 worldNrm;
+
 // retrieve triangles
 layout(set = 1, binding = eImplicit, scalar) buffer allTriangles_
 {
@@ -19,7 +22,7 @@ layout(set = 1, binding = eTextures) uniform sampler2D textureSamplers[];
 layout(push_constant) uniform _PushConstantRay { PushConstantRay pcRay; };
 
 const int MAX_STEPS = 600;
-const float STEP_SIZE = 0.1;
+const float STEP_SIZE = 0.15;
 
 
 struct Ray
@@ -72,6 +75,7 @@ void main()
 
   Triangle triangle = allTriangles[gl_PrimitiveID];
 
+  // ray marching
   float newHit = -1;
   Ray march;
   march.origin = ray.origin;
@@ -79,18 +83,50 @@ void main()
 
   for (int i = 0; i < MAX_STEPS; i++) {
     march.origin += STEP_SIZE * march.direction;
+    // leads to some values being cut off falsely but kind of fixed the border of the AABB
+    if (march.origin.y < 0)
+      break;
     Ray intersect;
     intersect.origin = march.origin;
     intersect.direction = vec3(0,-1,0);
     vec3 baryzentrics = hitTriangle(triangle, intersect);
     vec2 texCoord = triangle.v0.texCoord * (1 - baryzentrics.x - baryzentrics.y) + triangle.v1.texCoord * baryzentrics.x + triangle.v2.texCoord * baryzentrics.y;
     float height = textureLod(textureSamplers[nonuniformEXT(triangle.txtOffset)], texCoord, 0).x * pcRay.displacementAmount;
+
+    // experimental to calculate normal (https://stackoverflow.com/questions/5281261/generating-a-normal-map-from-a-height-map)
+    // 4096x4096 is resolution of the height map
+    ivec2 texelCoord = ivec2(texCoord * 4096);
+    height = texelFetch(textureSamplers[nonuniformEXT(triangle.txtOffset)], texelCoord, 0).x * pcRay.displacementAmount;
+
+    // TODO: ray marching should stop if exiting the bounding box
     if (march.origin.y < height) {
       newHit = STEP_SIZE * i;
+
+      // TODO: this code should be evaluated in the closest hit shader -> new method for normal calculation from height map
+      ivec2 coordT, coordR, coordB, coordL;
+      coordT = texelCoord + ivec2(0,1);  //s12
+      coordR = texelCoord + ivec2(1,0);  //s21
+      coordB = texelCoord + ivec2(0,-1); //s10
+      coordL = texelCoord + ivec2(-1,0); //s01
+      float top, right, bottom, left;
+      top = texelFetch(textureSamplers[nonuniformEXT(triangle.txtOffset)], coordT, 0).x * pcRay.displacementAmount;
+      right = texelFetch(textureSamplers[nonuniformEXT(triangle.txtOffset)], coordR, 0).x * pcRay.displacementAmount;
+      bottom = texelFetch(textureSamplers[nonuniformEXT(triangle.txtOffset)], coordB, 0).x * pcRay.displacementAmount;
+      left = texelFetch(textureSamplers[nonuniformEXT(triangle.txtOffset)], coordL, 0).x * pcRay.displacementAmount;
+
+      vec3 va = normalize(vec3(2,0,right - left));
+      vec3 vb = normalize(vec3(0,2,bottom - top));
+      // setting world normal for use in closest-hit shader
+      worldNrm = cross(va, vb).yzx;
       break;
     }
   }
+
+  if (newHit > 0)
+    reportIntersectionEXT(newHit, KIND_TRIANGLE);
+
   /*
+  // stencil for height
   vec3 hit = hitTriangle(triangle, ray);
   float tHit = hit.z;
   vec2 texCoord = triangle.v0.texCoord * (1 - hit.x - hit.y) + triangle.v1.texCoord * hit.x + triangle.v2.texCoord * hit.y;
@@ -103,8 +139,5 @@ void main()
   // Report hit point
   if(tHit > 0 && mask)
     reportIntersectionEXT(tHit, KIND_TRIANGLE);
-
   */
-  if (newHit > 0)
-    reportIntersectionEXT(newHit, KIND_TRIANGLE);
 }

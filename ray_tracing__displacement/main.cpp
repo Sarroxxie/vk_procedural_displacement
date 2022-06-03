@@ -35,6 +35,8 @@
 #include "nvvk/commands_vk.hpp"
 #include "nvvk/context_vk.hpp"
 
+#include "../common/obj_loader.h"
+
 
 //////////////////////////////////////////////////////////////////////////
 #define UNUSED(x) (void)(x)
@@ -42,6 +44,7 @@
 
 // Default search path for shaders
 std::vector<std::string> defaultSearchPaths;
+const float              MAX_DISPLACEMENT = 5.f;
 
 
 // GLFW Callback functions
@@ -55,7 +58,7 @@ void renderUI(HelloVulkan& helloVk)
 {
   ImGuiH::CameraWidget();
   // @author Josias
-  ImGui::SliderFloat("Displacement Amount", &helloVk.m_pcRaster.displacementAmount, 0.f, 1.f);
+  ImGui::SliderFloat("Displacement Amount", &helloVk.m_pcRaster.displacementAmount, 0.f, MAX_DISPLACEMENT);
   // \@author Josias
   if(ImGui::CollapsingHeader("Light"))
   {
@@ -71,8 +74,8 @@ void renderUI(HelloVulkan& helloVk)
 //////////////////////////////////////////////////////////////////////////
 //////////////////////////////////////////////////////////////////////////
 //////////////////////////////////////////////////////////////////////////
-static int const SAMPLE_WIDTH  = 1280;
-static int const SAMPLE_HEIGHT = 720;
+static int const SAMPLE_WIDTH  = 1920;
+static int const SAMPLE_HEIGHT = 1080;
 static bool const VSYNC        = false;
 
 
@@ -173,31 +176,34 @@ int main(int argc, char** argv)
   //helloVk.loadModel(nvh::findFile("media/scenes/plane.obj", defaultSearchPaths, true));
   //helloVk.loadModel(nvh::findFile("media/scenes/debug_plane.obj", defaultSearchPaths, true));
   // @author Josias
-  nvmath::vec3f color  = nvmath::vec3f(0.3f, 0.2f, 0.7f);
   nvmath::vec3f nrm   = nvmath::vec3f(0, 1, 0);
   std::string   texturePath = "noise_heightmap.png";
   //std::string   texturePath = "checkerboard_texture.png";
+  MaterialObj mat;
+  mat.diffuse = nvmath::vec3f(0.7f, 0.7f, 0.7f);
+  mat.specular = nvmath::vec3f(0.45f, 0.45f, 0.45f);
+  mat.illum   = 2;
+  mat.shininess = 15;
 
-  float  dispAmount = 1;
   Vertex v0, v1, v2, v3;
   v0.pos      = nvmath::vec3f(-20, 0, -20);
   v0.nrm      = nrm;
-  v0.color    = color;
+  v0.color    = mat.diffuse;
   v0.texCoord = nvmath::vec2f(0, 1);
 
   v1.pos      = nvmath::vec3f(-20, 0, 20);
   v1.nrm      = nrm;
-  v1.color    = color;
+  v1.color    = mat.diffuse;
   v1.texCoord = nvmath::vec2f(1, 1);
 
   v2.pos      = nvmath::vec3f(20, 0, -20);
   v2.nrm      = nrm;
-  v2.color    = color;
+  v2.color    = mat.diffuse;
   v2.texCoord = nvmath::vec2f(0, 0);
 
   v3.pos      = nvmath::vec3f(20, 0, 20);
   v3.nrm      = nrm;
-  v3.color    = color;
+  v3.color    = mat.diffuse;
   v3.texCoord = nvmath::vec2f(1, 0);
 
   Triangle t0;
@@ -212,7 +218,7 @@ int main(int argc, char** argv)
   triangles.emplace_back(t1);
   triangles.emplace_back(t0);
 
-  helloVk.createCustomTriangles(triangles, dispAmount, color, texturePath);
+  helloVk.createCustomTriangles(triangles, MAX_DISPLACEMENT, mat, texturePath);
 
   // \@author Josias
 

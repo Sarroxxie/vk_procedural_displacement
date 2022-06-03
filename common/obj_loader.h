@@ -39,10 +39,6 @@ struct MaterialObj
                                        // illumination model (see http://www.fileformat.info/format/material/)
   int illum     = 0;
   int textureID = -1;
-
-  // @author Josias
-  //int displacementTextureID = -1;
-  // \@author Josias
 };
 // OBJ representation of a vertex
 // NOTE: BLAS builder depends on pos being the first member

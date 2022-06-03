@@ -688,7 +688,7 @@ auto HelloVulkan::triangleToVkGeometryKHR()
 // @author Josias
 // Creates triangle data on GPU for later use inside of the shaders.
 //
-void HelloVulkan::createCustomTriangles(std::vector<Triangle> triangles, float dispAmount, nvmath::vec3f color, std::string texture)
+void HelloVulkan::createCustomTriangles(std::vector<Triangle> triangles, float dispAmount, MaterialObj mat, std::string texture)
 {
   std::vector<std::string> texturePaths{texture};
   const std::vector<std::string>& textures = texturePaths;
@@ -712,9 +712,7 @@ void HelloVulkan::createCustomTriangles(std::vector<Triangle> triangles, float d
     aabbs.emplace_back(aabb);
   }
 
-  // Creating material
-  MaterialObj mat;
-  mat.diffuse = color;
+  // Adding material
   std::vector<MaterialObj> materials;
   std::vector<int>         matIdx(nbTriangles);
   materials.emplace_back(mat);
@@ -1089,7 +1087,7 @@ void HelloVulkan::raytrace(const VkCommandBuffer& cmdBuf, const nvmath::vec4f& c
 //
 Aabb HelloVulkan::createAabbFromTriangle(Triangle t, float dispAmount) {
     Aabb aabb;
-    // displace into normal direction
+    // displace in direction of normal
     nvmath::vec3f extA = t.v0.pos + dispAmount * t.v0.nrm;
     nvmath::vec3f extB = t.v1.pos + dispAmount * t.v1.nrm;
     nvmath::vec3f extC = t.v2.pos + dispAmount * t.v2.nrm;

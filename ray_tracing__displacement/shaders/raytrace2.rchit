@@ -9,7 +9,7 @@
 #include "raycommon.glsl"
 #include "wavefront.glsl"
 
-hitAttributeEXT vec2 attribs;
+hitAttributeEXT vec3 worldNrm;
 
 // clang-format off
 layout(location = 0) rayPayloadInEXT hitPayload prd;
@@ -36,11 +36,6 @@ void main()
   Materials  materials   = Materials(objResource.materialAddress);
 
   vec3 worldPos = gl_WorldRayOriginEXT + gl_WorldRayDirectionEXT * gl_HitTEXT;
-
-  // @author Josias
-  // TODO: get the worldNrm as a payload from the intersection shader
-  vec3 worldNrm = vec3(0,1,0);
-  // \@author Josias
 
   // Vector toward the light
   vec3  L;

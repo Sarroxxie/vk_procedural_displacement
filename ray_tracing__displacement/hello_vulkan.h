@@ -28,6 +28,7 @@
 
 // #VKRay
 #include "nvvk/raytraceKHR_vk.hpp"
+#include "obj_loader.h"
 
 //--------------------------------------------------------------------------------------------------
 // Simple rasterizer of OBJ objects
@@ -77,7 +78,7 @@ public:
       0,                  // instance Id
       100.f,              // light intensity
       0,                  // light type
-      0.5f                   // displacement amount (@author Josias)
+      1.f                   // displacement amount (@author Josias)
   };
 
   // Array of objects and instances in the scene
@@ -162,7 +163,7 @@ public:
   nvvk::Buffer          m_trianglesMatColorBuffer;
   nvvk::Buffer          m_trianglesMatIndexBuffer;
 
-  void createCustomTriangles(std::vector<Triangle> triangles, float dispAmount, nvmath::vec3f color, std::string texture);
+  void createCustomTriangles(std::vector<Triangle> triangles, float dispAmount, MaterialObj mat, std::string texture);
   auto triangleToVkGeometryKHR();
 
 private:
