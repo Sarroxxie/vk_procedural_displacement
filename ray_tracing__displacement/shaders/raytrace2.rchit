@@ -9,7 +9,7 @@
 #include "raycommon.glsl"
 #include "wavefront.glsl"
 
-hitAttributeEXT vec3 worldNrm;
+hitAttributeEXT intersectionPayload intPayload;
 
 // clang-format off
 layout(location = 0) rayPayloadInEXT hitPayload prd;
@@ -21,7 +21,7 @@ layout(buffer_reference, scalar) buffer Materials {WaveFrontMaterial m[]; }; // 
 layout(buffer_reference, scalar) buffer MatIndices {int i[]; }; // Material ID for each triangle
 
 layout(set = 0, binding = eTlas) uniform accelerationStructureEXT topLevelAS;
-layout(set = 1, binding = eObjDescs, scalar) buffer ObjDesc_ { ObjDesc i[]; } objDesc;
+layout(set = 1, binding = eDispObjDescs, scalar) buffer DispObjDesc_ { DispObjDesc i[]; } dispObjDesc;
 layout(set = 1, binding = eTextures) uniform sampler2D textureSamplers[];
 layout(set = 1, binding = eImplicit, scalar) buffer allTriangles_ {Triangle i[];} allTriangles;
 
@@ -31,11 +31,12 @@ layout(push_constant) uniform _PushConstantRay { PushConstantRay pcRay; };
 void main()
 {
   // Object data
-  ObjDesc    objResource = objDesc.i[gl_InstanceCustomIndexEXT];
+  DispObjDesc    objResource = dispObjDesc.i[gl_InstanceCustomIndexEXT];
   MatIndices matIndices  = MatIndices(objResource.materialIndexAddress);
   Materials  materials   = Materials(objResource.materialAddress);
 
   vec3 worldPos = gl_WorldRayOriginEXT + gl_WorldRayDirectionEXT * gl_HitTEXT;
+  vec3 worldNrm = intPayload.worldNrm;
 
   // Vector toward the light
   vec3  L;
@@ -60,6 +61,12 @@ void main()
 
   // Diffuse
   vec3  diffuse     = computeDiffuse(mat, L, worldNrm);
+  if(mat.diffTextureID >= 0)
+  {
+    uint txtId = mat.diffTextureID + dispObjDesc.i[gl_InstanceCustomIndexEXT].txtOffset;
+    vec2 texCoord = intPayload.texCoord;
+    diffuse = texture(textureSamplers[nonuniformEXT(txtId)], texCoord).xyz;
+  }
   vec3  specular    = vec3(0);
   float attenuation = 0.3;
 

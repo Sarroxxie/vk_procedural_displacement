@@ -70,6 +70,28 @@ public:
     uint32_t      objIndex{0};  // Model index reference
   };
 
+  // @author Josias
+  struct TriangleObj
+  {
+    VertexObj v0;
+    VertexObj v1;
+    VertexObj v2;
+    int       txtOffset;
+  };
+
+  struct DispObjModel
+  {
+    uint32_t     nbIndices{0};
+    uint32_t     nbVertices{0};
+    nvvk::Buffer vertexBuffer;    // Device buffer of all 'Vertex'
+    nvvk::Buffer indexBuffer;     // Device buffer of the indices forming triangles
+    nvvk::Buffer matColorBuffer;  // Device buffer of array of 'Wavefront material'
+    nvvk::Buffer matIndexBuffer;  // Device buffer of array of 'Wavefront material'
+    nvvk::Buffer aabbBuffer;      // Device buffer of the AABBs for the triangles
+  };
+
+  // \@author Josias
+
 
   // Information pushed at each draw call
   PushConstantRaster m_pcRaster{
@@ -77,8 +99,7 @@ public:
       {10.f, 15.f, 8.f},  // light position
       0,                  // instance Id
       100.f,              // light intensity
-      0,                  // light type
-      1.f                   // displacement amount (@author Josias)
+      0                  // light type
   };
 
   // Array of objects and instances in the scene
@@ -153,20 +174,39 @@ public:
   VkStridedDeviceAddressRegionKHR m_callRegion{};
 
   // Push constant for ray tracer
-  PushConstantRay m_pcRay{};
+  PushConstantRay m_pcRay{
+      {1.f, 1.f, 1.f, 1.f}, // clear color
+      {10.f, 15.f, 8.f},    // light position
+      100.f,                // light intensity
+      0,                    // light type
+      1.f                   // displacement amount (@author Josias)};
+  };
 
   // @author Josias
 
-  std::vector<Triangle> m_triangles;
+  float displacementAmount = 1;
+
+  // Array of objects and instances in the scene
+  std::vector<DispObjModel>    m_dispObjModel;   // Model on host
+  std::vector<DispObjDesc>     m_dispObjDesc;    // Model description for device access
+  std::vector<ObjInstance>     m_dispInstances;      // Scene model instances
+
+  nvvk::Buffer m_bDispObjDesc;  // Device buffer of the OBJ descriptions
+
+  std::vector<TriangleObj> m_triangles;
+
   nvvk::Buffer          m_trianglesBuffer;
   nvvk::Buffer          m_trianglesAabbBuffer;
   nvvk::Buffer          m_trianglesMatColorBuffer;
   nvvk::Buffer          m_trianglesMatIndexBuffer;
 
-  void createCustomTriangles(std::vector<Triangle> triangles, float dispAmount, MaterialObj mat, std::string texture);
+  void createCustomTriangles(std::vector<TriangleObj> triangles, MaterialObj mat, std::string texture);
   auto triangleToVkGeometryKHR();
+  void loadNonDisplacementModel(ObjLoader loader, nvmath::mat4f transform);
+  void loadDisplacementModel(ObjLoader loader, nvmath::mat4f transform);
+  auto displacementObjectToVkGeometryKHR(const DispObjModel& model);
 
 private:
-  Aabb createAabbFromTriangle(Triangle t, float dispAmount);
+  Aabb createAabbFromTriangle(TriangleObj t);
   // \@author Josias
 };

@@ -41,12 +41,12 @@ using uint = unsigned int;
 #endif
 
 START_BINDING(SceneBindings)
-  eGlobals  = 0,  // Global uniform containing camera matrices
-  eObjDescs = 1,  // Access to the object descriptions
-  eTextures = 2,  // Access to textures
-  eImplicit = 3  // All implicit objects ( = custom intersection)
+  eGlobals       = 0,  // Global uniform containing camera matrices
+  eObjDescs      = 1,  // Access to the object descriptions
+  eTextures      = 2,  // Access to textures
+  eImplicit      = 3,  // All implicit objects ( = custom intersection)
+  eDispObjDescs   = 4   // Models containing displacement textures (-> custom intersection)
 END_BINDING();
-
 START_BINDING(RtxBindings)
   eTlas     = 0,  // Top-level acceleration structure
   eOutImage = 1   // Ray tracer output image
@@ -64,6 +64,19 @@ struct ObjDesc
   uint64_t materialIndexAddress;  // Address of the triangle material index buffer
 };
 
+// @author Josias
+// Information of a obj model containing displacement textures when referenced in a shader
+struct DispObjDesc
+{
+  int      txtOffset;             // Texture index offset in the array of textures
+  uint64_t vertexAddress;         // Address of the Vertex buffer
+  uint64_t indexAddress;          // Address of the index buffer
+  uint64_t materialAddress;       // Address of the material buffer
+  uint64_t materialIndexAddress;  // Address of the triangle material index buffer
+  uint64_t aabbAddress;           // Address of the AABB buffer
+};
+// \@author Josias
+
 // Uniform buffer set at each frame
 struct GlobalUniforms
 {
@@ -80,10 +93,6 @@ struct PushConstantRaster
   uint  objIndex;
   float lightIntensity;
   int   lightType;
-
-  // @author Josias
-  float displacementAmount;
-  // \@author Josias
 };
 
 
@@ -119,7 +128,8 @@ struct WaveFrontMaterial  // See ObjLoader, copy of MaterialObj, could be compre
   float ior;       // index of refraction
   float dissolve;  // 1 == opaque; 0 == fully transparent
   int   illum;     // illumination model (see http://www.fileformat.info/format/material/)
-  int   textureId;
+  int   diffTextureID;
+  int   dispTextureID;
 };
 
 /*
@@ -141,12 +151,12 @@ struct Aabb
 #define KIND_TRIANGLE 2
 
 // @author Josias
-struct Triangle
+struct Triangle  // See HelloVulkan, copy of TriangleObj
 {
   Vertex v0;
   Vertex v1;
   Vertex v2;
-  int  txtOffset;
+  int    txtOffset;
 };
 // \@author Josias
 

@@ -50,7 +50,13 @@ void ObjLoader::loadModel(const std::string& filename)
     if(!material.diffuse_texname.empty())
     {
       m_textures.push_back(material.diffuse_texname);
-      m.textureID = static_cast<int>(m_textures.size()) - 1;
+      m.diffTextureID = static_cast<int>(m_textures.size()) - 1;
+    }
+
+    if(!material.displacement_texname.empty())
+    {
+      m_textures.push_back(material.displacement_texname);
+      m.dispTextureID = static_cast<int>(m_textures.size()) - 1;
     }
 
     m_materials.emplace_back(m);
@@ -66,6 +72,7 @@ void ObjLoader::loadModel(const std::string& filename)
   {
     m_vertices.reserve(shape.mesh.indices.size() + m_vertices.size());
     m_indices.reserve(shape.mesh.indices.size() + m_indices.size());
+    // inserting vector "material_ids" at the end of "m_matIndx" ("material_ids" contains per face material ID)
     m_matIndx.insert(m_matIndx.end(), shape.mesh.material_ids.begin(), shape.mesh.material_ids.end());
 
     for(const auto& index : shape.mesh.indices)

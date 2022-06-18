@@ -116,8 +116,12 @@ void HelloVulkan::createDescriptorSetLayout()
   m_descSetLayoutBind.addBinding(SceneBindings::eTextures, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, nbTxt,
                                  VK_SHADER_STAGE_FRAGMENT_BIT | VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR | VK_SHADER_STAGE_INTERSECTION_BIT_KHR);
 
-  // Implicit geometries ( = custom intersection)
+  // Implicit geometries ( -> custom intersection)
   m_descSetLayoutBind.addBinding(eImplicit, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1,
+                                 VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR | VK_SHADER_STAGE_INTERSECTION_BIT_KHR);
+
+  // DispObj descriptions ( -> custom intersection)
+  m_descSetLayoutBind.addBinding(eDispObjDescs, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1,
                                  VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR | VK_SHADER_STAGE_INTERSECTION_BIT_KHR);
 
   m_descSetLayout = m_descSetLayoutBind.createLayout(m_device);
@@ -151,6 +155,10 @@ void HelloVulkan::updateDescriptorSet()
   // All the triangles
   VkDescriptorBufferInfo dbiTriangles{m_trianglesBuffer.buffer, 0, VK_WHOLE_SIZE};
   writes.emplace_back(m_descSetLayoutBind.makeWrite(m_descSet, eImplicit, &dbiTriangles));
+
+  // Models constaining displacement textures
+  VkDescriptorBufferInfo dbiSceneDispDesc{m_bDispObjDesc.buffer, 0, VK_WHOLE_SIZE};
+  writes.emplace_back(m_descSetLayoutBind.makeWrite(m_descSet, SceneBindings::eDispObjDescs, &dbiSceneDispDesc));
   // \@author Josias
 
   // Writing the information
@@ -200,6 +208,7 @@ void HelloVulkan::loadModel(const std::string& filename, nvmath::mat4f transform
   LOGI("Loading File:  %s \n", filename.c_str());
   ObjLoader loader;
   loader.loadModel(filename);
+  bool displacement = false;
 
   // Converting from Srgb to linear
   for(auto& m : loader.m_materials)
@@ -207,8 +216,26 @@ void HelloVulkan::loadModel(const std::string& filename, nvmath::mat4f transform
     m.ambient  = nvmath::pow(m.ambient, 2.2f);
     m.diffuse  = nvmath::pow(m.diffuse, 2.2f);
     m.specular = nvmath::pow(m.specular, 2.2f);
+
+    if(m.dispTextureID >= 0)
+      displacement = true;
   }
 
+  if(displacement)
+  {
+    loadDisplacementModel(loader, transform);
+  }
+  else
+  {
+    loadNonDisplacementModel(loader, transform);
+  }
+}
+
+//--------------------------------------------------------------------------------------------------
+// Setting all the buffers for a loaded OBJ file that does not contain displacement textures
+//
+void HelloVulkan::loadNonDisplacementModel(ObjLoader loader, nvmath::mat4f transform)
+{
   ObjModel model;
   model.nbIndices  = static_cast<uint32_t>(loader.m_indices.size());
   model.nbVertices = static_cast<uint32_t>(loader.m_vertices.size());
@@ -228,6 +255,7 @@ void HelloVulkan::loadModel(const std::string& filename, nvmath::mat4f transform
   model.matIndexBuffer = m_alloc.createBuffer(cmdBuf, loader.m_matIndx, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | flag);
   // Creates all textures found and find the offset for this model
   auto txtOffset = static_cast<uint32_t>(m_textures.size());
+
   createTextureImages(cmdBuf, loader.m_textures);
   cmdBufGet.submitAndWait(cmdBuf);
   m_alloc.finalizeAndReleaseStaging();
@@ -257,6 +285,81 @@ void HelloVulkan::loadModel(const std::string& filename, nvmath::mat4f transform
   m_objDesc.emplace_back(desc);
 }
 
+//--------------------------------------------------------------------------------------------------
+// Setting all the buffers for a loaded OBJ file that contains displacement textures
+//
+void HelloVulkan::loadDisplacementModel(ObjLoader loader, nvmath::mat4f transform)
+{
+  // m_matIndx contains a material index for every triangles, so it's an easy way to grab the total triangle count
+  int               nbTriangles = loader.m_matIndx.size();
+  std::vector<Aabb> aabbs;
+  aabbs.reserve(nbTriangles);
+
+  for(int i = 0; i < nbTriangles; i++)
+  {
+    VertexObj v0 = loader.m_vertices[loader.m_indices[i * 3]];
+    VertexObj v1 = loader.m_vertices[loader.m_indices[i * 3 + 1]];
+    VertexObj v2 = loader.m_vertices[loader.m_indices[i * 3 + 2]];
+
+    TriangleObj t{v0, v1, v2, 0};
+    Aabb        aabb = createAabbFromTriangle(t);
+    aabbs.emplace_back(aabb);
+  }
+
+  DispObjModel model;
+  model.nbIndices  = static_cast<uint32_t>(loader.m_indices.size());
+  model.nbVertices = static_cast<uint32_t>(loader.m_vertices.size());
+
+  // Create the buffers on Device and copy vertices, indices and materials
+  nvvk::CommandPool  cmdBufGet(m_device, m_graphicsQueueIndex);
+  VkCommandBuffer    cmdBuf = cmdBufGet.createCommandBuffer();
+  VkBufferUsageFlags flag   = VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
+
+  // #VKRay
+  VkBufferUsageFlags rayTracingFlags =
+      flag | VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
+
+  model.vertexBuffer = m_alloc.createBuffer(cmdBuf, loader.m_vertices, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | rayTracingFlags);
+  model.indexBuffer = m_alloc.createBuffer(cmdBuf, loader.m_indices, VK_BUFFER_USAGE_INDEX_BUFFER_BIT | rayTracingFlags);
+  model.matColorBuffer = m_alloc.createBuffer(cmdBuf, loader.m_materials, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | flag);
+  model.matIndexBuffer = m_alloc.createBuffer(cmdBuf, loader.m_matIndx, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | flag);
+  model.aabbBuffer     = m_alloc.createBuffer(cmdBuf, aabbs,
+                                              VK_BUFFER_USAGE_STORAGE_BUFFER_BIT
+                                                  | VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR | flag);
+  // Creates all textures found and find the offset for this model
+  auto txtOffset = static_cast<uint32_t>(m_textures.size());
+
+  createTextureImages(cmdBuf, loader.m_textures);
+  cmdBufGet.submitAndWait(cmdBuf);
+  m_alloc.finalizeAndReleaseStaging();
+
+  std::string objNb = std::to_string(m_dispObjModel.size());
+  m_debug.setObjectName(model.vertexBuffer.buffer, (std::string("vertex_" + objNb)));
+  m_debug.setObjectName(model.indexBuffer.buffer, (std::string("index_" + objNb)));
+  m_debug.setObjectName(model.matColorBuffer.buffer, (std::string("mat_" + objNb)));
+  m_debug.setObjectName(model.matIndexBuffer.buffer, (std::string("matIdx_" + objNb)));
+  m_debug.setObjectName(model.aabbBuffer.buffer, (std::string("aabb_" + objNb)));
+
+  // Keeping transformation matrix of the instance
+  ObjInstance instance;
+  instance.transform = transform;
+  instance.objIndex  = static_cast<uint32_t>(m_dispObjModel.size());
+  m_dispInstances.push_back(instance);
+
+  // Creating information for device access
+  DispObjDesc desc;
+  desc.txtOffset            = txtOffset;
+  desc.vertexAddress        = nvvk::getBufferDeviceAddress(m_device, model.vertexBuffer.buffer);
+  desc.indexAddress         = nvvk::getBufferDeviceAddress(m_device, model.indexBuffer.buffer);
+  desc.materialAddress      = nvvk::getBufferDeviceAddress(m_device, model.matColorBuffer.buffer);
+  desc.materialIndexAddress = nvvk::getBufferDeviceAddress(m_device, model.matIndexBuffer.buffer);
+  desc.aabbAddress          = nvvk::getBufferDeviceAddress(m_device, model.aabbBuffer.buffer);
+
+  // Keeping the obj host model and device description
+  m_dispObjModel.emplace_back(model);
+  m_dispObjDesc.emplace_back(desc);
+}
+
 
 //--------------------------------------------------------------------------------------------------
 // Creating the uniform buffer holding the camera matrices
@@ -279,11 +382,33 @@ void HelloVulkan::createObjDescriptionBuffer()
 {
   nvvk::CommandPool cmdGen(m_device, m_graphicsQueueIndex);
 
+  // @author Josias
+  // if the list of ObjDesc (m_objDesc) is empty, add a dummy ObjDesc so the pipeline doesn't crash
+  if(m_objDesc.size() < 1)
+  {
+    ObjDesc dummy;
+    m_objDesc.emplace_back(dummy);
+  }
+  // \@author Josias
+
   auto cmdBuf = cmdGen.createCommandBuffer();
   m_bObjDesc  = m_alloc.createBuffer(cmdBuf, m_objDesc, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
+
+  // @author Josias
+  // if the list of DispObjDesc (m_dispObjDesc) is empty, add a dummy DispObjDesc so the pipeline doesn't crash
+  if(m_dispObjDesc.size() < 1)
+  {
+    DispObjDesc dummy;
+    m_dispObjDesc.emplace_back(dummy);
+  }
+  m_bDispObjDesc = m_alloc.createBuffer(cmdBuf, m_dispObjDesc, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
+  // \@author Josias
   cmdGen.submitAndWait(cmdBuf);
   m_alloc.finalizeAndReleaseStaging();
   m_debug.setObjectName(m_bObjDesc.buffer, "ObjDescs");
+  // @author Josias
+  m_debug.setObjectName(m_bDispObjDesc.buffer, "DispObjDescs");
+  // \@author Josias
 }
 
 //--------------------------------------------------------------------------------------------------
@@ -372,6 +497,10 @@ void HelloVulkan::destroyResources()
   m_alloc.destroy(m_bGlobals);
   m_alloc.destroy(m_bObjDesc);
 
+  // @author Josias
+  m_alloc.destroy(m_bDispObjDesc);
+  // \@author Josias
+
   for(auto& m : m_objModel)
   {
     m_alloc.destroy(m.vertexBuffer);
@@ -379,6 +508,17 @@ void HelloVulkan::destroyResources()
     m_alloc.destroy(m.matColorBuffer);
     m_alloc.destroy(m.matIndexBuffer);
   }
+
+  // @author Josias
+  for(auto& m : m_dispObjModel)
+  {
+    m_alloc.destroy(m.vertexBuffer);
+    m_alloc.destroy(m.indexBuffer);
+    m_alloc.destroy(m.matColorBuffer);
+    m_alloc.destroy(m.matIndexBuffer);
+    m_alloc.destroy(m.aabbBuffer);
+  }
+  // \@author Josias
 
   for(auto& t : m_textures)
   {
@@ -602,7 +742,7 @@ void HelloVulkan::drawPost(VkCommandBuffer cmdBuf)
 // Initialize Vulkan ray tracing
 void HelloVulkan::initRayTracing()
 {
-	// Requesting ray tracing properties
+  // Requesting ray tracing properties
   VkPhysicalDeviceProperties2 prop2{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2};
   prop2.pNext = &m_rtProperties;
   vkGetPhysicalDeviceProperties2(m_physicalDevice, &prop2);
@@ -618,7 +758,7 @@ auto HelloVulkan::objectToVkGeometryKHR(const ObjModel& model)
   // Fetch raw device addresses
   VkDeviceAddress vertexAddress = nvvk::getBufferDeviceAddress(m_device, model.vertexBuffer.buffer);
   VkDeviceAddress indexAddress  = nvvk::getBufferDeviceAddress(m_device, model.indexBuffer.buffer);
-  
+
   uint32_t maxPrimitiveCount = model.nbIndices / 3;
 
   // describe buffer as array of VertexObj
@@ -641,8 +781,8 @@ auto HelloVulkan::objectToVkGeometryKHR(const ObjModel& model)
 
   // entire array will be used to build the BLAS
   VkAccelerationStructureBuildRangeInfoKHR offset;
-  offset.firstVertex = 0;
-  offset.primitiveCount = maxPrimitiveCount;
+  offset.firstVertex     = 0;
+  offset.primitiveCount  = maxPrimitiveCount;
   offset.primitiveOffset = 0;
   offset.transformOffset = 0;
 
@@ -651,6 +791,37 @@ auto HelloVulkan::objectToVkGeometryKHR(const ObjModel& model)
   input.asGeometry.emplace_back(asGeom);
   input.asBuildOffsetInfo.emplace_back(offset);
 
+  return input;
+}
+
+//--------------------------------------------------------------------------------------------------
+// Convert an OBJ model containing displacement textures into the ray tracing geometry used to build the BLAS.
+// For each triangle of the OBJ model a precalculated AABB is added to the BLAS builder.
+//
+auto HelloVulkan::displacementObjectToVkGeometryKHR(const DispObjModel& model)
+{
+  VkDeviceAddress dataAddress = nvvk::getBufferDeviceAddress(m_device, model.aabbBuffer.buffer);
+
+  VkAccelerationStructureGeometryAabbsDataKHR aabbs{VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_AABBS_DATA_KHR};
+  aabbs.data.deviceAddress = dataAddress;
+  aabbs.stride             = sizeof(Aabb);
+
+  // Setting up the build info of the acceleration (C version, c++ gives wrong type)
+  VkAccelerationStructureGeometryKHR asGeom{VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_KHR};
+  asGeom.geometryType   = VK_GEOMETRY_TYPE_AABBS_KHR;
+  asGeom.flags          = VK_GEOMETRY_OPAQUE_BIT_KHR;
+  asGeom.geometry.aabbs = aabbs;
+
+  // TODO: SET PRIMITIVE COUNT!
+  VkAccelerationStructureBuildRangeInfoKHR offset{};
+  offset.firstVertex     = 0;
+  offset.primitiveCount  = (uint32_t)model.nbIndices / 3;  // Nb aabb (remember: one AABB for each triangle
+  offset.primitiveOffset = 0;
+  offset.transformOffset = 0;
+
+  nvvk::RaytracingBuilderKHR::BlasInput input;
+  input.asGeometry.emplace_back(asGeom);
+  input.asBuildOffsetInfo.emplace_back(offset);
   return input;
 }
 
@@ -688,11 +859,11 @@ auto HelloVulkan::triangleToVkGeometryKHR()
 // @author Josias
 // Creates triangle data on GPU for later use inside of the shaders.
 //
-void HelloVulkan::createCustomTriangles(std::vector<Triangle> triangles, float dispAmount, MaterialObj mat, std::string texture)
+void HelloVulkan::createCustomTriangles(std::vector<TriangleObj> triangles, MaterialObj mat, std::string texture)
 {
-  std::vector<std::string> texturePaths{texture};
-  const std::vector<std::string>& textures = texturePaths;
-  uint32_t nbTriangles = triangles.size();
+  std::vector<std::string>        texturePaths{texture};
+  const std::vector<std::string>& textures    = texturePaths;
+  uint32_t                        nbTriangles = triangles.size();
 
   // All Triangles
   m_triangles.resize(nbTriangles);
@@ -700,7 +871,7 @@ void HelloVulkan::createCustomTriangles(std::vector<Triangle> triangles, float d
   for(uint32_t i = 0; i < nbTriangles; i++)
   {
     triangles.at(i).txtOffset = static_cast<uint32_t>(m_textures.size());
-    m_triangles[i] = std::move(triangles.at(i));
+    m_triangles[i]            = std::move(triangles.at(i));
   }
 
   // Axis aligned bounding box of each triangle
@@ -708,7 +879,7 @@ void HelloVulkan::createCustomTriangles(std::vector<Triangle> triangles, float d
   aabbs.reserve(nbTriangles);
   for(const auto& t : m_triangles)
   {
-    Aabb aabb = createAabbFromTriangle(t, dispAmount);
+    Aabb aabb = createAabbFromTriangle(t);
     aabbs.emplace_back(aabb);
   }
 
@@ -762,7 +933,7 @@ void HelloVulkan::createBottomLevelAS()
 {
   // BLAS - Storing each primitive in a geometry
   std::vector<nvvk::RaytracingBuilderKHR::BlasInput> allBlas;
-  allBlas.reserve(m_objModel.size());
+  allBlas.reserve(m_objModel.size() + m_dispObjModel.size());
   for(const auto& obj : m_objModel)
   {
     auto blas = objectToVkGeometryKHR(obj);
@@ -771,12 +942,26 @@ void HelloVulkan::createBottomLevelAS()
     allBlas.emplace_back(blas);
   }
 
-  // @author Josias
   // Triangles
-  auto blas = triangleToVkGeometryKHR();
-  allBlas.emplace_back(blas);
+  if(m_triangles.size() > 0)
+  {
+    auto blas = triangleToVkGeometryKHR();
+    allBlas.emplace_back(blas);
+  }
+
+  // @author Josias
+  for(const auto& obj : m_dispObjModel)
+  {
+    auto blas = displacementObjectToVkGeometryKHR(obj);
+
+    allBlas.emplace_back(blas);
+  }
+
   // \@author Josias
 
+  // 0 to (nbObj - 1) -> non displacement objects
+  // nbObj -> implicit custom triangles
+  // (nbObj + 1) to nbObj + nbDispObj -> implicit instances from model import
   m_rtBuilder.buildBlas(allBlas, VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_TRACE_BIT_KHR);
 }
 
@@ -785,9 +970,10 @@ void HelloVulkan::createBottomLevelAS()
 void HelloVulkan::createTopLevelAS()
 {
   std::vector<VkAccelerationStructureInstanceKHR> tlas;
-
-  auto nbObj = static_cast<uint32_t>(m_instances.size()) - 1;
-  tlas.reserve(nbObj);
+  auto                                            nbObj     = static_cast<uint32_t>(m_instances.size());
+  auto                                            nbDispObj = static_cast<uint32_t>(m_dispInstances.size());
+  tlas.reserve(nbObj + nbDispObj - 1);
+  // last instance in m_instances is dummy instance for Custom Triangles
   for(uint32_t i = 0; i < nbObj; i++)
   {
     const auto& inst = m_instances[i];
@@ -798,19 +984,37 @@ void HelloVulkan::createTopLevelAS()
     rayInst.accelerationStructureReference = m_rtBuilder.getBlasDeviceAddress(inst.objIndex);
     rayInst.flags                          = VK_GEOMETRY_INSTANCE_TRIANGLE_FACING_CULL_DISABLE_BIT_KHR;
     rayInst.mask                           = 0xFF;       //  Only be hit if rayMask & instance.mask != 0
-    rayInst.instanceShaderBindingTableRecordOffset = 0;  // We will use the same hit group for all objects
+    rayInst.instanceShaderBindingTableRecordOffset = 0;  // Hit Group 0 uses default intersection and then raytrace.rchit
     tlas.emplace_back(rayInst);
   }
 
-  // Add the blas containing all implicit objects
-  VkAccelerationStructureInstanceKHR rayInst{};
-  rayInst.transform                      = nvvk::toTransformMatrixKHR(nvmath::mat4f(1));  // (identity)
-  rayInst.instanceCustomIndex            = nbObj;  // nbObj == last object == implicit
-  rayInst.accelerationStructureReference = m_rtBuilder.getBlasDeviceAddress(static_cast<uint32_t>(m_objModel.size()));
-  rayInst.flags                          = VK_GEOMETRY_INSTANCE_TRIANGLE_FACING_CULL_DISABLE_BIT_KHR;
-  rayInst.mask                           = 0xFF;       //  Only be hit if rayMask & instance.mask != 0
-  rayInst.instanceShaderBindingTableRecordOffset = 1;  // We will use the same hit group for all objects
-  tlas.emplace_back(rayInst);
+  if(m_triangles.size() > 0)
+  {
+    // Add the blas containing all implicit objects (created with "createCustomTriangles()"
+    VkAccelerationStructureInstanceKHR rayInst{};
+    rayInst.transform                      = nvvk::toTransformMatrixKHR(nvmath::mat4f(1));  // (identity)
+    rayInst.instanceCustomIndex            = nbObj - 1;  // nbObj - 1 == last object (in m_instances) == implicit
+    rayInst.accelerationStructureReference = m_rtBuilder.getBlasDeviceAddress(m_instances[nbObj - 1].objIndex);
+    rayInst.flags                          = VK_GEOMETRY_INSTANCE_TRIANGLE_FACING_CULL_DISABLE_BIT_KHR;
+    rayInst.mask                           = 0xFF;       //  Only be hit if rayMask & instance.mask != 0
+    rayInst.instanceShaderBindingTableRecordOffset = 1;  // Hit Group 1 is for custom intersection and then raytrace2.rchit
+    tlas.emplace_back(rayInst);
+  }
+
+  for(uint32_t i = 0; i < nbDispObj; i++)
+  {
+    const auto& inst = m_dispInstances[i];
+
+    VkAccelerationStructureInstanceKHR rayInst{};
+    rayInst.transform = nvvk::toTransformMatrixKHR(inst.transform);  // Position of the instance
+    // will be added after the non displacement models, so their number has to get added to the index
+    rayInst.instanceCustomIndex                    = inst.objIndex;  // gl_InstanceCustomIndexEXT
+    rayInst.accelerationStructureReference         = m_rtBuilder.getBlasDeviceAddress(inst.objIndex + nbObj);
+    rayInst.flags                                  = VK_GEOMETRY_INSTANCE_TRIANGLE_FACING_CULL_DISABLE_BIT_KHR;
+    rayInst.mask                                   = 0xFF;  //  Only be hit if rayMask & instance.mask != 0
+    rayInst.instanceShaderBindingTableRecordOffset = 1;  // Hit Group 1 is for custom intersection and then raytrace2.rchit
+    tlas.emplace_back(rayInst);
+  }
 
   m_rtBuilder.buildTlas(tlas, VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_TRACE_BIT_KHR);
 }
@@ -1010,11 +1214,11 @@ void HelloVulkan::createShaderBindingTable()
   // allocate a buffer for storing the SBT
   VkDeviceSize sbtSize = m_rgenRegion.size + m_missRegion.size + m_hitRegion.size + m_callRegion.size;  // we don't use callables, so size is still 0
   m_rtSBTBuffer        = m_alloc.createBuffer(sbtSize,
-                                       VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT
-                                           | VK_BUFFER_USAGE_SHADER_BINDING_TABLE_BIT_KHR,
-                                       VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+                                              VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT
+                                                  | VK_BUFFER_USAGE_SHADER_BINDING_TABLE_BIT_KHR,
+                                              VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
   m_debug.setObjectName(m_rtSBTBuffer.buffer, std::string("SBT"));  // set a name for debugging with NSight
-   
+
   // find the SBT addresses of each group
   VkBufferDeviceAddressInfo info{VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO, nullptr, m_rtSBTBuffer.buffer};
   VkDeviceAddress           sbtAddress = vkGetBufferDeviceAddress(m_device, &info);
@@ -1061,20 +1265,14 @@ void HelloVulkan::raytrace(const VkCommandBuffer& cmdBuf, const nvmath::vec4f& c
   m_debug.beginLabel(cmdBuf, "Ray trace");
   // init push constant values
   m_pcRay.clearColor     = clearColor;
-  m_pcRay.lightPosition  = m_pcRaster.lightPosition;
-  m_pcRay.lightIntensity = m_pcRaster.lightIntensity;
-  m_pcRay.lightType      = m_pcRaster.lightType;
-
-  // @author Josias
-  m_pcRay.displacementAmount = m_pcRaster.displacementAmount;
-  // \@author Josias
 
   std::vector<VkDescriptorSet> descSets{m_rtDescSet, m_descSet};
   vkCmdBindPipeline(cmdBuf, VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR, m_rtPipeline);
   vkCmdBindDescriptorSets(cmdBuf, VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR, m_rtPipelineLayout, 0,
                           (uint32_t)descSets.size(), descSets.data(), 0, nullptr);
   vkCmdPushConstants(cmdBuf, m_rtPipelineLayout,
-                     VK_SHADER_STAGE_RAYGEN_BIT_KHR | VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR | VK_SHADER_STAGE_MISS_BIT_KHR,
+                     VK_SHADER_STAGE_RAYGEN_BIT_KHR | VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR | VK_SHADER_STAGE_MISS_BIT_KHR
+                         | VK_SHADER_STAGE_INTERSECTION_BIT_KHR,
                      0, sizeof(PushConstantRay), &m_pcRay);
 
   vkCmdTraceRaysKHR(cmdBuf, &m_rgenRegion, &m_missRegion, &m_hitRegion, &m_callRegion, m_size.width, m_size.height, 1);
@@ -1085,19 +1283,20 @@ void HelloVulkan::raytrace(const VkCommandBuffer& cmdBuf, const nvmath::vec4f& c
 // @author Josias
 // Creates an axis-aligned bounding box for a triangle that can have a certain amount of displacement
 //
-Aabb HelloVulkan::createAabbFromTriangle(Triangle t, float dispAmount) {
-    Aabb aabb;
-    // displace in direction of normal
-    nvmath::vec3f extA = t.v0.pos + dispAmount * t.v0.nrm;
-    nvmath::vec3f extB = t.v1.pos + dispAmount * t.v1.nrm;
-    nvmath::vec3f extC = t.v2.pos + dispAmount * t.v2.nrm;
+Aabb HelloVulkan::createAabbFromTriangle(TriangleObj t)
+{
+  Aabb aabb;
+  // displace in direction of normal
+  nvmath::vec3f extA = t.v0.pos + displacementAmount * t.v0.nrm;
+  nvmath::vec3f extB = t.v1.pos + displacementAmount * t.v1.nrm;
+  nvmath::vec3f extC = t.v2.pos + displacementAmount * t.v2.nrm;
 
-    for(uint32_t i = 0; i < 3; i++)
-    {
-      aabb.minimum[i] =
-          std::min(std::min(std::min(t.v0.pos[i], t.v1.pos[i]), std::min(t.v2.pos[i], extA[i])), std::min(extB[i], extC[i]));
-      aabb.maximum[i] =
-          std::max(std::max(std::max(t.v0.pos[i], t.v1.pos[i]), std::max(t.v2.pos[i], extA[i])), std::max(extB[i], extC[i]));
-    }
-    return aabb;
+  for(uint32_t i = 0; i < 3; i++)
+  {
+    aabb.minimum[i] =
+        std::min(std::min(std::min(t.v0.pos[i], t.v1.pos[i]), std::min(t.v2.pos[i], extA[i])), std::min(extB[i], extC[i]));
+    aabb.maximum[i] =
+        std::max(std::max(std::max(t.v0.pos[i], t.v1.pos[i]), std::max(t.v2.pos[i], extA[i])), std::max(extB[i], extC[i]));
+  }
+  return aabb;
 }

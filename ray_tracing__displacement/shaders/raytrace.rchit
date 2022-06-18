@@ -77,9 +77,9 @@ void main()
 
   // Diffuse
   vec3 diffuse = computeDiffuse(mat, L, worldNrm);
-  if(mat.textureId >= 0)
+  if(mat.diffTextureID >= 0)
   {
-    uint txtId = mat.textureId + objDesc.i[gl_InstanceCustomIndexEXT].txtOffset;
+    uint txtId = mat.diffTextureID + objDesc.i[gl_InstanceCustomIndexEXT].txtOffset;
     vec2 texCoord =
         v0.texCoord * barycentrics.x + v1.texCoord * barycentrics.y + v2.texCoord * barycentrics.z;
     diffuse *= texture(textureSamplers[nonuniformEXT(txtId)], texCoord).xyz;
