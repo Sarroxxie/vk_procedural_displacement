@@ -179,7 +179,8 @@ public:
       {10.f, 15.f, 8.f},    // light position
       100.f,                // light intensity
       0,                    // light type
-      1.f                   // displacement amount (@author Josias)};
+      1.f,                  // displacement amount (@author Josias)};
+      0.0f                  // blending offset
   };
 
   // @author Josias

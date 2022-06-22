@@ -291,7 +291,7 @@ void HelloVulkan::loadNonDisplacementModel(ObjLoader loader, nvmath::mat4f trans
 void HelloVulkan::loadDisplacementModel(ObjLoader loader, nvmath::mat4f transform)
 {
   // m_matIndx contains a material index for every triangles, so it's an easy way to grab the total triangle count
-  int               nbTriangles = loader.m_matIndx.size();
+  int               nbTriangles =  loader.m_indices.size() / 3;
   std::vector<Aabb> aabbs;
   aabbs.reserve(nbTriangles);
 

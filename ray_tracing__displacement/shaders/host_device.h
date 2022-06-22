@@ -106,6 +106,7 @@ struct PushConstantRay
 
   // @author Josias
   float displacementAmount;
+  float blendingOffset;
   // \@author Josias
 };
 

@@ -45,6 +45,7 @@
 // Default search path for shaders
 std::vector<std::string> defaultSearchPaths;
 const float              MAX_DISPLACEMENT = 5.f;
+const float              MAX_OFFSET       = 0.05f;
 
 
 // GLFW Callback functions
@@ -59,6 +60,7 @@ void renderUI(HelloVulkan& helloVk)
   ImGuiH::CameraWidget();
   // @author Josias
   ImGui::SliderFloat("Displacement Amount", &helloVk.m_pcRay.displacementAmount, 0.f, MAX_DISPLACEMENT);
+  ImGui::SliderFloat("Blending Offset", &helloVk.m_pcRay.blendingOffset, 0.f, MAX_OFFSET);
   // \@author Josias
   if(ImGui::CollapsingHeader("Light"))
   {

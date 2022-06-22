@@ -8,6 +8,7 @@
 
 #include "raycommon.glsl"
 #include "wavefront.glsl"
+#include "blending.glsl"
 
 hitAttributeEXT intersectionPayload intPayload;
 
@@ -65,7 +66,8 @@ void main()
   {
     uint txtId = mat.diffTextureID + dispObjDesc.i[gl_InstanceCustomIndexEXT].txtOffset;
     vec2 texCoord = intPayload.texCoord;
-    diffuse = texture(textureSamplers[nonuniformEXT(txtId)], texCoord).xyz;
+    //diffuse = texture(textureSamplers[nonuniformEXT(txtId)], texCoord).xyz;
+    diffuse = proceduralTilingAndBlending(texCoord, textureSamplers[nonuniformEXT(txtId + 1)]);
   }
   vec3  specular    = vec3(0);
   float attenuation = 0.3;
