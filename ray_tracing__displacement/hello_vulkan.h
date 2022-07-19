@@ -99,7 +99,7 @@ public:
       {10.f, 15.f, 8.f},  // light position
       0,                  // instance Id
       100.f,              // light intensity
-      0                  // light type
+      0                   // light type
   };
 
   // Array of objects and instances in the scene
@@ -180,7 +180,9 @@ public:
       100.f,                // light intensity
       0,                    // light type
       1.f,                  // displacement amount (@author Josias)};
-      0.0f                  // blending offset
+      0.0f,                 // blending offset
+      //{1},                  // world to lattice matrix
+      //{1}                   // lattice to world matrix (inverse of the above)
   };
 
   // @author Josias

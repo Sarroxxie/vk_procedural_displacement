@@ -45,7 +45,7 @@
 // Default search path for shaders
 std::vector<std::string> defaultSearchPaths;
 const float              MAX_DISPLACEMENT = 5.f;
-const float              MAX_OFFSET       = 0.05f;
+const float              MAX_OFFSET       = 4.f;
 
 
 // GLFW Callback functions

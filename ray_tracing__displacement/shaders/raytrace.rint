@@ -155,7 +155,7 @@ void main()
     //float height = texelFetch(textureSamplers[nonuniformEXT(triangle.txtOffset)], texelCoord, 0).x * pcRay.displacementAmount;
 
     // experimental tiling and blending
-    float height = proceduralTilingAndBlending(texCoord, textureSamplers[nonuniformEXT(triangle.txtOffset)]).x * pcRay.displacementAmount;
+    float height = proceduralTilingAndBlending(texCoord, textureSamplers[nonuniformEXT(triangle.txtOffset)], offset).x * pcRay.displacementAmount;
     height = clamp(height, 0, pcRay.displacementAmount);
 
     // TODO: ray marching should stop if exiting the bounding box
@@ -170,10 +170,10 @@ void main()
       coordB = texCoord + vec2(0,-1) * 1/4096; //s10
       coordL = texCoord + vec2(-1,0) * 1/4096; //s01
       float top, right, bottom, left;
-      top = proceduralTilingAndBlending(coordT, textureSamplers[nonuniformEXT(triangle.txtOffset)]).x * pcRay.displacementAmount;
-      right = proceduralTilingAndBlending(coordR, textureSamplers[nonuniformEXT(triangle.txtOffset)]).x * pcRay.displacementAmount;
-      bottom = proceduralTilingAndBlending(coordB, textureSamplers[nonuniformEXT(triangle.txtOffset)]).x * pcRay.displacementAmount;
-      left = proceduralTilingAndBlending(coordL, textureSamplers[nonuniformEXT(triangle.txtOffset)]).x * pcRay.displacementAmount;
+      top = proceduralTilingAndBlending(coordT, textureSamplers[nonuniformEXT(triangle.txtOffset)], offset).x * pcRay.displacementAmount;
+      right = proceduralTilingAndBlending(coordR, textureSamplers[nonuniformEXT(triangle.txtOffset)], offset).x * pcRay.displacementAmount;
+      bottom = proceduralTilingAndBlending(coordB, textureSamplers[nonuniformEXT(triangle.txtOffset)], offset).x * pcRay.displacementAmount;
+      left = proceduralTilingAndBlending(coordL, textureSamplers[nonuniformEXT(triangle.txtOffset)], offset).x * pcRay.displacementAmount;
 
       vec3 va = normalize(vec3(2,0,right - left));
       vec3 vb = normalize(vec3(0,2,bottom - top));

@@ -64,10 +64,11 @@ void main()
   vec3  diffuse     = computeDiffuse(mat, L, worldNrm);
   if(mat.diffTextureID >= 0)
   {
-    uint txtId = mat.diffTextureID + dispObjDesc.i[gl_InstanceCustomIndexEXT].txtOffset;
+    // TODO: grabbing mat.dispTextureID for debugging purposes (needs mat.diffTextureID later)
+    uint txtId = mat.dispTextureID + dispObjDesc.i[gl_InstanceCustomIndexEXT].txtOffset;
     vec2 texCoord = intPayload.texCoord;
     //diffuse = texture(textureSamplers[nonuniformEXT(txtId)], texCoord).xyz;
-    diffuse = proceduralTilingAndBlending(texCoord, textureSamplers[nonuniformEXT(txtId + 1)]);
+    diffuse = proceduralTilingAndBlending(texCoord, textureSamplers[nonuniformEXT(txtId)], pcRay.blendingOffset);
   }
   vec3  specular    = vec3(0);
   float attenuation = 0.3;

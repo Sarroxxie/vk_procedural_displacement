@@ -107,6 +107,11 @@ struct PushConstantRay
   // @author Josias
   float displacementAmount;
   float blendingOffset;
+
+  // TODO: somehow register a struct mat2
+
+  //mat2 worldToLattice;
+  //mat2 latticeToWorld;
   // \@author Josias
 };
 
