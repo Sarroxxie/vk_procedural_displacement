@@ -35,6 +35,8 @@
 #include "nvvk/commands_vk.hpp"
 #include "nvvk/context_vk.hpp"
 
+#include "../common/obj_loader.h"
+
 
 //////////////////////////////////////////////////////////////////////////
 #define UNUSED(x) (void)(x)
@@ -42,6 +44,8 @@
 
 // Default search path for shaders
 std::vector<std::string> defaultSearchPaths;
+const float              MAX_DISPLACEMENT = 5.f;
+const float              MAX_OFFSET       = 4.f;
 
 
 // GLFW Callback functions
@@ -54,22 +58,26 @@ static void onErrorCallback(int error, const char* description)
 void renderUI(HelloVulkan& helloVk)
 {
   ImGuiH::CameraWidget();
+  // @author Josias
+  ImGui::SliderFloat("Displacement Amount", &helloVk.m_pcRay.displacementAmount, 0.f, MAX_DISPLACEMENT);
+  ImGui::SliderFloat("Blending Offset", &helloVk.m_pcRay.blendingOffset, 0.f, MAX_OFFSET);
+  // \@author Josias
   if(ImGui::CollapsingHeader("Light"))
   {
-    ImGui::RadioButton("Point", &helloVk.m_pcRaster.lightType, 0);
+    ImGui::RadioButton("Point", &helloVk.m_pcRay.lightType, 0);
     ImGui::SameLine();
-    ImGui::RadioButton("Infinite", &helloVk.m_pcRaster.lightType, 1);
+    ImGui::RadioButton("Infinite", &helloVk.m_pcRay.lightType, 1);
 
-    ImGui::SliderFloat3("Position", &helloVk.m_pcRaster.lightPosition.x, -20.f, 20.f);
-    ImGui::SliderFloat("Intensity", &helloVk.m_pcRaster.lightIntensity, 0.f, 150.f);
+    ImGui::SliderFloat3("Position", &helloVk.m_pcRay.lightPosition.x, -20.f, 20.f);
+    ImGui::SliderFloat("Intensity", &helloVk.m_pcRay.lightIntensity, 0.f, 150.f);
   }
 }
 
 //////////////////////////////////////////////////////////////////////////
 //////////////////////////////////////////////////////////////////////////
 //////////////////////////////////////////////////////////////////////////
-static int const SAMPLE_WIDTH  = 1280;
-static int const SAMPLE_HEIGHT = 720;
+static int const SAMPLE_WIDTH  = 1920;
+static int const SAMPLE_HEIGHT = 1080;
 static bool const VSYNC        = false;
 
 
@@ -164,47 +172,20 @@ int main(int argc, char** argv)
   // Setup Imgui
   helloVk.initGUI(0);  // Using sub-pass 0
 
+  // Starting value for the Displacement Amount parameter (that can be edited via ImGUI)
+  helloVk.m_pcRay.displacementAmount = 3.5f;
+  // Used for building the AABBs, therefore is the upper limit for displacement
+  helloVk.displacementAmount = MAX_DISPLACEMENT;
   // Creation of the example
-  helloVk.loadModel(nvh::findFile("media/scenes/Medieval_building.obj", defaultSearchPaths, true));
+  // dummy matrix to test if transforms are working
+  nvmath::mat4f matrix{1, 0,   0,   0,
+                       0,   1, 0,   0,
+                       0,   0,   1, 0,
+                       0,   MAX_DISPLACEMENT - 1,   0,   1};
+  //helloVk.loadModel(nvh::findFile("media/scenes/Medieval_building.obj", defaultSearchPaths, true));
   //helloVk.loadModel(nvh::findFile("media/scenes/drone_vulkan_rt.obj", defaultSearchPaths, true));
   //helloVk.loadModel(nvh::findFile("media/scenes/plane.obj", defaultSearchPaths, true));
-  //helloVk.loadModel(nvh::findFile("media/scenes/debug_plane.obj", defaultSearchPaths, true));
-  // @author Josias
-  nvmath::vec3f color  = nvmath::vec3f(0.3f, 0.2f, 0.7f);
-
-  float         dispAmount = 1;
-  nvmath::vec3f v0         = nvmath::vec3f(-20, 0, -20);
-  nvmath::vec3f v1         = nvmath::vec3f(-20, 0, 20);
-  nvmath::vec3f v2         = nvmath::vec3f(20, 0, -20);
-  nvmath::vec3f v3         = nvmath::vec3f(20, 0, 20);
-  Triangle      t;
-  t.posA      = v0;
-  t.posB      = v1;
-  t.posC      = v2;
-  t.normA     = nvmath::vec3f(0, 1, 0);
-  t.normB     = nvmath::vec3f(0, 1, 0);
-  t.normC     = nvmath::vec3f(0, 1, 0);
-  t.texCoordA = nvmath::vec2f(0, 0);
-  t.texCoordB = nvmath::vec2f(0, 1);
-  t.texCoordC = nvmath::vec2f(1, 0);
-  Triangle t2;
-  t2.posA      = v1;
-  t2.posB      = v2;
-  t2.posC      = v3;
-  t2.normA     = nvmath::vec3f(0, 1, 0);
-  t2.normB     = nvmath::vec3f(0, 1, 0);
-  t2.normC     = nvmath::vec3f(0, 1, 0);
-  t2.texCoordA = nvmath::vec2f(0, 0);
-  t2.texCoordB = nvmath::vec2f(0, 1);
-  t2.texCoordC = nvmath::vec2f(1, 0);
-  std::vector<Triangle> triangles;
-  triangles.emplace_back(t2);
-  triangles.emplace_back(t);
-
-  helloVk.createCustomTriangles(triangles, dispAmount, color);
-  //helloVk.createSpheres(1);
-
-  // \@author Josias
+  helloVk.loadModel(nvh::findFile("media/scenes/debug_plane.obj", defaultSearchPaths, true));
 
   helloVk.createOffscreenRender();
   helloVk.createDescriptorSetLayout();
@@ -226,7 +207,6 @@ int main(int argc, char** argv)
   helloVk.updatePostDescriptorSet();
 
   nvmath::vec4f clearColor   = nvmath::vec4f(1, 1, 1, 1.00f);
-  bool          useRaytracer = true;
 
 
   helloVk.setupGlfwCallbacks(window);
@@ -248,7 +228,6 @@ int main(int argc, char** argv)
     {
       ImGuiH::Panel::Begin();
       ImGui::ColorEdit3("Clear color", reinterpret_cast<float*>(&clearColor));
-      ImGui::Checkbox("Ray Tracer mode", &useRaytracer); // switch between raster and ray tracing
       renderUI(helloVk);
       ImGui::Text("Application average %.3f ms/frame (%.1f FPS)", 1000.0f / ImGui::GetIO().Framerate, ImGui::GetIO().Framerate);
       ImGuiH::Control::Info("", "", "(F10) Toggle Pane", ImGuiH::Control::Flags::Disabled);
@@ -283,17 +262,7 @@ int main(int argc, char** argv)
       offscreenRenderPassBeginInfo.framebuffer     = helloVk.m_offscreenFramebuffer;
       offscreenRenderPassBeginInfo.renderArea      = {{0, 0}, helloVk.getSize()};
 
-      // Rendering Scene
-      if(useRaytracer)
-      {
-        helloVk.raytrace(cmdBuf, clearColor);
-      }
-      else
-      {
-        vkCmdBeginRenderPass(cmdBuf, &offscreenRenderPassBeginInfo, VK_SUBPASS_CONTENTS_INLINE);
-        helloVk.rasterize(cmdBuf);
-        vkCmdEndRenderPass(cmdBuf);
-      }
+      helloVk.raytrace(cmdBuf, clearColor);
     }
 
 

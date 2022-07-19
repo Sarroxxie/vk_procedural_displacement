@@ -37,12 +37,9 @@ struct MaterialObj
   float         ior           = 1.0f;  // index of refraction
   float         dissolve      = 1.f;   // 1 == opaque; 0 == fully transparent
                                        // illumination model (see http://www.fileformat.info/format/material/)
-  int illum     = 0;
-  int textureID = -1;
-
-  // @author Josias
-  //int displacementTextureID = -1;
-  // \@author Josias
+  int illum         = 0;
+  int diffTextureID = -1;
+  int dispTextureID = -1;
 };
 // OBJ representation of a vertex
 // NOTE: BLAS builder depends on pos being the first member
