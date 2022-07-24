@@ -13,11 +13,6 @@
 // used between intersection shader and closest-hit shader (can only be one attribute -> may need struct later)
 hitAttributeEXT intersectionPayload intPayload;
 
-// retrieve triangles
-layout(set = 1, binding = eImplicit, scalar) buffer allTriangles_
-{
-  Triangle allTriangles[];
-};
 layout(buffer_reference, scalar) buffer Vertices {Vertex v[]; }; // Positions of an object
 layout(buffer_reference, scalar) buffer Indices {ivec3 i[]; }; // Triangle indices
 layout(buffer_reference, scalar) buffer Materials {WaveFrontMaterial m[]; }; // Array of all materials on an object
@@ -109,7 +104,13 @@ void main()
   triangle.v0 = v0;
   triangle.v1 = v1;
   triangle.v2 = v2;
-  triangle.txtOffset = mat.dispTextureID;
+  triangle.txtOffset = mat.dispTextureID + dispObjDesc.i[gl_InstanceCustomIndexEXT].txtOffset;
+
+  mat2 latToWrld = mat2(pcRay.a1, pcRay.b1, pcRay.c1, pcRay.d1);
+  mat2 wrldToLat = mat2(pcRay.a2, pcRay.b2, pcRay.c2, pcRay.d2);
+
+  //mat2 latToWrld = mat2(pcRay.latticeToWorld.xyz, pcRay.d1);
+  //mat2 wrldToLat = mat2(pcRay.worldToLattice.xyz, pcRay.d2);
 
   float offset = pcRay.blendingOffset;
 
@@ -152,10 +153,10 @@ void main()
     // experimental to calculate normal (https://stackoverflow.com/questions/5281261/generating-a-normal-map-from-a-height-map)
     // 4096x4096 is resolution of the height map
     ivec2 texelCoord = ivec2(texCoord * 4096);
-    //float height = texelFetch(textureSamplers[nonuniformEXT(triangle.txtOffset)], texelCoord, 0).x * pcRay.displacementAmount;
+    //float height = texelFetch(textureSampler, texelCoord, 0).x * pcRay.displacementAmount;
 
     // experimental tiling and blending
-    float height = proceduralTilingAndBlending(texCoord, textureSamplers[nonuniformEXT(triangle.txtOffset)], offset).x * pcRay.displacementAmount;
+    float height = proceduralTilingAndBlending(texCoord, textureSamplers[nonuniformEXT(triangle.txtOffset)], latToWrld, wrldToLat, offset).x * pcRay.displacementAmount;
     height = clamp(height, 0, pcRay.displacementAmount);
 
     // TODO: ray marching should stop if exiting the bounding box
@@ -170,10 +171,10 @@ void main()
       coordB = texCoord + vec2(0,-1) * 1/4096; //s10
       coordL = texCoord + vec2(-1,0) * 1/4096; //s01
       float top, right, bottom, left;
-      top = proceduralTilingAndBlending(coordT, textureSamplers[nonuniformEXT(triangle.txtOffset)], offset).x * pcRay.displacementAmount;
-      right = proceduralTilingAndBlending(coordR, textureSamplers[nonuniformEXT(triangle.txtOffset)], offset).x * pcRay.displacementAmount;
-      bottom = proceduralTilingAndBlending(coordB, textureSamplers[nonuniformEXT(triangle.txtOffset)], offset).x * pcRay.displacementAmount;
-      left = proceduralTilingAndBlending(coordL, textureSamplers[nonuniformEXT(triangle.txtOffset)], offset).x * pcRay.displacementAmount;
+      top = proceduralTilingAndBlending(coordT, textureSamplers[nonuniformEXT(triangle.txtOffset)], latToWrld, wrldToLat, offset).x * pcRay.displacementAmount;
+      right = proceduralTilingAndBlending(coordR, textureSamplers[nonuniformEXT(triangle.txtOffset)], latToWrld, wrldToLat, offset).x * pcRay.displacementAmount;
+      bottom = proceduralTilingAndBlending(coordB, textureSamplers[nonuniformEXT(triangle.txtOffset)], latToWrld, wrldToLat, offset).x * pcRay.displacementAmount;
+      left = proceduralTilingAndBlending(coordL, textureSamplers[nonuniformEXT(triangle.txtOffset)], latToWrld, wrldToLat, offset).x * pcRay.displacementAmount;
 
       vec3 va = normalize(vec3(2,0,right - left));
       vec3 vb = normalize(vec3(0,2,bottom - top));
@@ -197,8 +198,8 @@ void main()
 
   // sample displacement texture
   float mipLevel = 0;
-  vec3 diffuse = textureLod(textureSamplers[nonuniformEXT(triangle.txtOffset)], texCoord, mipLevel).xyz;
-  diffuse = proceduralTilingAndBlending(texCoord, textureSamplers[nonuniformEXT(triangle.txtOffset)]);
+  vec3 diffuse = textureLod(textureSampler, texCoord, mipLevel).xyz;
+  diffuse = proceduralTilingAndBlending(texCoord, textureSampler);
 
   bool mask = diffuse.x < pcRay.displacementAmount;// && diffuse.y < 0.2 && diffuse.z < 0.2;
   // Report hit point

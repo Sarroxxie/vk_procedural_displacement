@@ -23,12 +23,15 @@
 
 #ifdef __cplusplus
 #include "nvmath/nvmath.h"
+#include "custom_structs.h"
 // GLSL Type
 using vec2 = nvmath::vec2f;
 using vec3 = nvmath::vec3f;
 using vec4 = nvmath::vec4f;
 using mat4 = nvmath::mat4f;
 using uint = unsigned int;
+//using mat2 = nvmath::vec4f;
+//using mat2 = custommath::matrix2<float>;
 #endif
 
 // clang-format off
@@ -44,15 +47,13 @@ START_BINDING(SceneBindings)
   eGlobals       = 0,  // Global uniform containing camera matrices
   eObjDescs      = 1,  // Access to the object descriptions
   eTextures      = 2,  // Access to textures
-  eImplicit      = 3,  // All implicit objects ( = custom intersection)
-  eDispObjDescs   = 4   // Models containing displacement textures (-> custom intersection)
+  eDispObjDescs  = 3   // Models containing displacement textures (-> custom intersection)
 END_BINDING();
 START_BINDING(RtxBindings)
   eTlas     = 0,  // Top-level acceleration structure
   eOutImage = 1   // Ray tracer output image
 END_BINDING();
 // clang-format on
-
 
 // Information of a obj model when referenced in a shader
 struct ObjDesc
@@ -99,6 +100,7 @@ struct PushConstantRaster
 // Push constant structure for the ray tracer
 struct PushConstantRay
 {
+  //vec4  worldToLattice, latticeToWorld;
   vec4  clearColor;
   vec3  lightPosition;
   float lightIntensity;
@@ -108,10 +110,9 @@ struct PushConstantRay
   float displacementAmount;
   float blendingOffset;
 
-  // TODO: somehow register a struct mat2
+  float a1, b1, c1, d1;
+  float a2, b2, c2, d2;
 
-  //mat2 worldToLattice;
-  //mat2 latticeToWorld;
   // \@author Josias
 };
 

@@ -45,7 +45,8 @@
 // Default search path for shaders
 std::vector<std::string> defaultSearchPaths;
 const float              MAX_DISPLACEMENT = 5.f;
-const float              MAX_OFFSET       = 4.f;
+const float              MAX_OFFSET       = 1.f;
+const float              triangleSize     = 0.25f;
 
 
 // GLFW Callback functions
@@ -172,6 +173,41 @@ int main(int argc, char** argv)
   // Setup Imgui
   helloVk.initGUI(0);  // Using sub-pass 0
 
+  // calculate matrices necessary for tiling the texture on the GPU (used in Procedural Textures by Tiling and Blending) 
+  const float pi = 3.1415926;
+
+  float a = triangleSize * cos(pi / 3);
+  float b = triangleSize * sin(pi / 3);
+  float c = triangleSize;
+  float d = 0.f;
+
+  // determinante of lattice to world matrix
+  float det = a * d - b * c;
+
+  //mat2 latticeToWorld = mat2(triangleSize * cos(pi / 3), triangleSize, triangleSize * sin(pi / 3), 0);
+
+  // calculating inverse of lattice to world matrix
+  vec4 worldToLattice = vec4{d / det, -b / det, -c / det, a / det};
+
+  /* std::cout << std::endl << std::endl;
+  std::cout << "LATTICE TO WORLD MATRIX: " << a << ", " << b << ", " << c << ", " << d << std::endl;
+  std::cout << "WORLD TO LATTICE MATRIX: " << worldToLattice.a00 << ", " << worldToLattice.a10 << ", "
+            << worldToLattice.a01 << ", " << worldToLattice.a11 << std::endl;
+  std::cout << std::endl << std::endl;*/
+
+  //helloVk.m_pcRay.latticeToWorld = vec4{a, b, c, d};
+  //helloVk.m_pcRay.worldToLattice = vec4{(float)(d / det), (float) (-b / det), (float) (-c / det), (float) (a / det)};
+
+  helloVk.m_pcRay.a1 = a;
+  helloVk.m_pcRay.b1 = b;
+  helloVk.m_pcRay.c1 = c;
+  helloVk.m_pcRay.d1 = d;
+
+  helloVk.m_pcRay.a2 = d / det;
+  helloVk.m_pcRay.b2 = -b / det;
+  helloVk.m_pcRay.c2 = -c / det;
+  helloVk.m_pcRay.d2 = a / det;
+
   // Starting value for the Displacement Amount parameter (that can be edited via ImGUI)
   helloVk.m_pcRay.displacementAmount = 3.5f;
   // Used for building the AABBs, therefore is the upper limit for displacement
@@ -182,7 +218,7 @@ int main(int argc, char** argv)
                        0,   1, 0,   0,
                        0,   0,   1, 0,
                        0,   MAX_DISPLACEMENT - 1,   0,   1};
-  //helloVk.loadModel(nvh::findFile("media/scenes/Medieval_building.obj", defaultSearchPaths, true));
+  helloVk.loadModel(nvh::findFile("media/scenes/Medieval_building.obj", defaultSearchPaths, true));
   //helloVk.loadModel(nvh::findFile("media/scenes/drone_vulkan_rt.obj", defaultSearchPaths, true));
   //helloVk.loadModel(nvh::findFile("media/scenes/plane.obj", defaultSearchPaths, true));
   helloVk.loadModel(nvh::findFile("media/scenes/debug_plane.obj", defaultSearchPaths, true));
