@@ -4,11 +4,6 @@ vec2 hash(vec2 vertex) {
   return fract(sin((vertex) * mat2(127.1, 311.7, 269.5, 183.3)) * 43758.5453);
 }
 
-mat2 inverse2(mat2 m) {
-  return mat2(m[1][1],-m[0][1],
-             -m[1][0], m[0][0]) / (m[0][0]*m[1][1] - m[0][1]*m[1][0]);
-}
-
 vec3 proceduralTilingAndBlending(vec2 uv, sampler2D inputTexture, float offset) {
   // this is probably calculated by the compiler in advance, not 100% sure though
   float triangleSize = 0.25;
