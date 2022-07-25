@@ -38,12 +38,6 @@ void main()
   vec3 worldPos = gl_WorldRayOriginEXT + gl_WorldRayDirectionEXT * gl_HitTEXT;
   vec3 worldNrm = intPayload.worldNrm;
 
-  mat2 latToWrld = mat2(pcRay.a1, pcRay.b1, pcRay.c1, pcRay.d1);
-  mat2 wrldToLat = mat2(pcRay.a2, pcRay.b2, pcRay.c2, pcRay.d2);
-
-  //mat2 latToWrld = mat2(pcRay.latticeToWorld.xyz, pcRay.d1);
-  //mat2 wrldToLat = mat2(pcRay.worldToLattice.xyz, pcRay.d2);
-
   // Vector toward the light
   vec3  L;
   float lightIntensity = pcRay.lightIntensity;
@@ -73,8 +67,7 @@ void main()
     uint txtId = mat.dispTextureID + dispObjDesc.i[gl_InstanceCustomIndexEXT].txtOffset;
     vec2 texCoord = intPayload.texCoord;
     //diffuse = texture(textureSamplers[nonuniformEXT(txtId)], texCoord).xyz;
-    diffuse = proceduralTilingAndBlending(texCoord, textureSamplers[nonuniformEXT(txtId)],latToWrld,
-                                          wrldToLat, pcRay.blendingOffset);
+    diffuse = proceduralTilingAndBlending(texCoord, textureSamplers[nonuniformEXT(txtId)], pcRay.blendingOffset);
   }
   vec3  specular    = vec3(0);
   float attenuation = 0.3;

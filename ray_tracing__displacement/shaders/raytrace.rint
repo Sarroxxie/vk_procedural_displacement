@@ -88,7 +88,7 @@ void main()
 
   // Indices of the triangle
   ivec3 ind = indices.i[gl_PrimitiveID];
-
+  
   // Vertex of the triangle
   Vertex v0 = vertices.v[ind.x];
   Vertex v1 = vertices.v[ind.y];
@@ -105,12 +105,6 @@ void main()
   triangle.v1 = v1;
   triangle.v2 = v2;
   triangle.txtOffset = mat.dispTextureID + dispObjDesc.i[gl_InstanceCustomIndexEXT].txtOffset;
-
-  mat2 latToWrld = mat2(pcRay.a1, pcRay.b1, pcRay.c1, pcRay.d1);
-  mat2 wrldToLat = mat2(pcRay.a2, pcRay.b2, pcRay.c2, pcRay.d2);
-
-  //mat2 latToWrld = mat2(pcRay.latticeToWorld.xyz, pcRay.d1);
-  //mat2 wrldToLat = mat2(pcRay.worldToLattice.xyz, pcRay.d2);
 
   float offset = pcRay.blendingOffset;
 
@@ -156,7 +150,7 @@ void main()
     //float height = texelFetch(textureSampler, texelCoord, 0).x * pcRay.displacementAmount;
 
     // experimental tiling and blending
-    float height = proceduralTilingAndBlending(texCoord, textureSamplers[nonuniformEXT(triangle.txtOffset)], latToWrld, wrldToLat, offset).x * pcRay.displacementAmount;
+    float height = proceduralTilingAndBlending(texCoord, textureSamplers[nonuniformEXT(triangle.txtOffset)], offset).x * pcRay.displacementAmount;
     height = clamp(height, 0, pcRay.displacementAmount);
 
     // TODO: ray marching should stop if exiting the bounding box
@@ -171,10 +165,10 @@ void main()
       coordB = texCoord + vec2(0,-1) * 1/4096; //s10
       coordL = texCoord + vec2(-1,0) * 1/4096; //s01
       float top, right, bottom, left;
-      top = proceduralTilingAndBlending(coordT, textureSamplers[nonuniformEXT(triangle.txtOffset)], latToWrld, wrldToLat, offset).x * pcRay.displacementAmount;
-      right = proceduralTilingAndBlending(coordR, textureSamplers[nonuniformEXT(triangle.txtOffset)], latToWrld, wrldToLat, offset).x * pcRay.displacementAmount;
-      bottom = proceduralTilingAndBlending(coordB, textureSamplers[nonuniformEXT(triangle.txtOffset)], latToWrld, wrldToLat, offset).x * pcRay.displacementAmount;
-      left = proceduralTilingAndBlending(coordL, textureSamplers[nonuniformEXT(triangle.txtOffset)], latToWrld, wrldToLat, offset).x * pcRay.displacementAmount;
+      top = proceduralTilingAndBlending(coordT, textureSamplers[nonuniformEXT(triangle.txtOffset)], offset).x * pcRay.displacementAmount;
+      right = proceduralTilingAndBlending(coordR, textureSamplers[nonuniformEXT(triangle.txtOffset)], offset).x * pcRay.displacementAmount;
+      bottom = proceduralTilingAndBlending(coordB, textureSamplers[nonuniformEXT(triangle.txtOffset)], offset).x * pcRay.displacementAmount;
+      left = proceduralTilingAndBlending(coordL, textureSamplers[nonuniformEXT(triangle.txtOffset)], offset).x * pcRay.displacementAmount;
 
       vec3 va = normalize(vec3(2,0,right - left));
       vec3 vb = normalize(vec3(0,2,bottom - top));

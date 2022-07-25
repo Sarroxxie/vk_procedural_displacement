@@ -23,15 +23,12 @@
 
 #ifdef __cplusplus
 #include "nvmath/nvmath.h"
-#include "custom_structs.h"
 // GLSL Type
 using vec2 = nvmath::vec2f;
 using vec3 = nvmath::vec3f;
 using vec4 = nvmath::vec4f;
 using mat4 = nvmath::mat4f;
 using uint = unsigned int;
-//using mat2 = nvmath::vec4f;
-//using mat2 = custommath::matrix2<float>;
 #endif
 
 // clang-format off
@@ -100,7 +97,6 @@ struct PushConstantRaster
 // Push constant structure for the ray tracer
 struct PushConstantRay
 {
-  //vec4  worldToLattice, latticeToWorld;
   vec4  clearColor;
   vec3  lightPosition;
   float lightIntensity;
@@ -109,10 +105,6 @@ struct PushConstantRay
   // @author Josias
   float displacementAmount;
   float blendingOffset;
-
-  float a1, b1, c1, d1;
-  float a2, b2, c2, d2;
-
   // \@author Josias
 };
 

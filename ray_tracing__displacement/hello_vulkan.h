@@ -175,23 +175,12 @@ public:
 
   // Push constant for ray tracer
   PushConstantRay m_pcRay{
-      //{1.f, 0.f, 0.f, 1.f},
-      //{1.f, 0.f, 0.f, 1.f},
       {1.f, 1.f, 1.f, 1.f},  // clear color
       {10.f, 15.f, 8.f},     // light position
       100.f,                 // light intensity
       0,                     // light type
       1.f,                   // displacement amount (@author Josias)};
-      0.0f,                  // blending offset
-
-      1.f,
-      0.f,
-      0.f,
-      1.f,  // lattice to world
-      1.f,
-      0.f,
-      0.f,
-      1.f,  // world to lattice
+      0.f,                   // blending offset
   };
 
   // @author Josias
@@ -208,6 +197,7 @@ public:
   void loadNonDisplacementModel(ObjLoader loader, nvmath::mat4f transform);
   void loadDisplacementModel(ObjLoader loader, nvmath::mat4f transform);
   auto displacementObjectToVkGeometryKHR(const DispObjModel& model);
+  void reloadShaders();
 
 private:
   Aabb createAabbFromTriangle(TriangleObj t);

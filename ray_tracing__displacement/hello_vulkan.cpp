@@ -518,7 +518,7 @@ void HelloVulkan::destroyResources()
     m_alloc.destroy(t);
   }
 
-  //#Post
+  // #Post
   m_alloc.destroy(m_offscreenColor);
   m_alloc.destroy(m_offscreenDepth);
   vkDestroyPipeline(m_device, m_postPipeline, nullptr);
@@ -1159,4 +1159,15 @@ Aabb HelloVulkan::createAabbFromTriangle(TriangleObj t)
         std::max(std::max(std::max(t.v0.pos[i], t.v1.pos[i]), std::max(t.v2.pos[i], extA[i])), std::max(extB[i], extC[i]));
   }
   return aabb;
+}
+
+void HelloVulkan::reloadShaders() {
+  // destroying old pipeline and SBT
+  vkDestroyPipeline(m_device, m_rtPipeline, nullptr);
+  vkDestroyPipelineLayout(m_device, m_rtPipelineLayout, nullptr);
+  m_alloc.destroy(m_rtSBTBuffer);
+
+  // creating new pipeline and SBT
+  createRtPipeline();
+  createShaderBindingTable();
 }
