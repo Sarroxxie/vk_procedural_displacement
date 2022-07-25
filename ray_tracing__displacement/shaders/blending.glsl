@@ -5,7 +5,7 @@ vec2 hash(vec2 vertex) {
 }
 
 vec3 proceduralTilingAndBlending(vec2 uv, sampler2D inputTexture, float offset) {
-  // constants for now, TODO: send via push constant
+  // this is probably calculated by the compiler in advance, not 100% sure though
   float triangleSize = 0.25;
   float pi = 3.1415926;
   mat2 latticeToWorld = mat2(triangleSize * cos(pi / 3), triangleSize, triangleSize * sin(pi / 3), 0);

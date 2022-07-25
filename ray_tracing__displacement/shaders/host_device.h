@@ -44,15 +44,13 @@ START_BINDING(SceneBindings)
   eGlobals       = 0,  // Global uniform containing camera matrices
   eObjDescs      = 1,  // Access to the object descriptions
   eTextures      = 2,  // Access to textures
-  eImplicit      = 3,  // All implicit objects ( = custom intersection)
-  eDispObjDescs   = 4   // Models containing displacement textures (-> custom intersection)
+  eDispObjDescs  = 3   // Models containing displacement textures (-> custom intersection)
 END_BINDING();
 START_BINDING(RtxBindings)
   eTlas     = 0,  // Top-level acceleration structure
   eOutImage = 1   // Ray tracer output image
 END_BINDING();
 // clang-format on
-
 
 // Information of a obj model when referenced in a shader
 struct ObjDesc
@@ -107,11 +105,6 @@ struct PushConstantRay
   // @author Josias
   float displacementAmount;
   float blendingOffset;
-
-  // TODO: somehow register a struct mat2
-
-  //mat2 worldToLattice;
-  //mat2 latticeToWorld;
   // \@author Josias
 };
 

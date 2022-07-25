@@ -175,14 +175,12 @@ public:
 
   // Push constant for ray tracer
   PushConstantRay m_pcRay{
-      {1.f, 1.f, 1.f, 1.f}, // clear color
-      {10.f, 15.f, 8.f},    // light position
-      100.f,                // light intensity
-      0,                    // light type
-      1.f,                  // displacement amount (@author Josias)};
-      0.0f,                 // blending offset
-      //{1},                  // world to lattice matrix
-      //{1}                   // lattice to world matrix (inverse of the above)
+      {1.f, 1.f, 1.f, 1.f},  // clear color
+      {10.f, 15.f, 8.f},     // light position
+      100.f,                 // light intensity
+      0,                     // light type
+      1.f,                   // displacement amount (@author Josias)};
+      0.f,                   // blending offset
   };
 
   // @author Josias
@@ -192,22 +190,14 @@ public:
   // Array of objects and instances in the scene
   std::vector<DispObjModel>    m_dispObjModel;   // Model on host
   std::vector<DispObjDesc>     m_dispObjDesc;    // Model description for device access
-  std::vector<ObjInstance>     m_dispInstances;      // Scene model instances
+  std::vector<ObjInstance>     m_dispInstances;  // Scene model instances
 
   nvvk::Buffer m_bDispObjDesc;  // Device buffer of the OBJ descriptions
 
-  std::vector<TriangleObj> m_triangles;
-
-  nvvk::Buffer          m_trianglesBuffer;
-  nvvk::Buffer          m_trianglesAabbBuffer;
-  nvvk::Buffer          m_trianglesMatColorBuffer;
-  nvvk::Buffer          m_trianglesMatIndexBuffer;
-
-  void createCustomTriangles(std::vector<TriangleObj> triangles, MaterialObj mat, std::string texture);
-  auto triangleToVkGeometryKHR();
   void loadNonDisplacementModel(ObjLoader loader, nvmath::mat4f transform);
   void loadDisplacementModel(ObjLoader loader, nvmath::mat4f transform);
   auto displacementObjectToVkGeometryKHR(const DispObjModel& model);
+  void reloadShaders();
 
 private:
   Aabb createAabbFromTriangle(TriangleObj t);
