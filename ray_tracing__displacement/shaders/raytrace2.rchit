@@ -24,7 +24,6 @@ layout(buffer_reference, scalar) buffer MatIndices {int i[]; }; // Material ID f
 layout(set = 0, binding = eTlas) uniform accelerationStructureEXT topLevelAS;
 layout(set = 1, binding = eDispObjDescs, scalar) buffer DispObjDesc_ { DispObjDesc i[]; } dispObjDesc;
 layout(set = 1, binding = eTextures) uniform sampler2D textureSamplers[];
-layout(set = 1, binding = eImplicit, scalar) buffer allTriangles_ {Triangle i[];} allTriangles;
 
 layout(push_constant) uniform _PushConstantRay { PushConstantRay pcRay; };
 // clang-format on
