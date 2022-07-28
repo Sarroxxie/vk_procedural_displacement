@@ -1139,6 +1139,141 @@ void HelloVulkan::raytrace(const VkCommandBuffer& cmdBuf, const nvmath::vec4f& c
   m_debug.endLabel(cmdBuf);
 }
 
+// stores last write time for various files used as #includes for the shaders
+void HelloVulkan::initShaderUpdater()
+{
+  for(const auto& entry : std::filesystem::directory_iterator(m_shaderSourcePathPrefix))
+  {
+    std::string path = entry.path().string();
+    if(path.substr(path.size() - 5) == ".glsl" || path.substr(path.size() - 2) == ".h")
+    {
+      m_shaderWriteTimes.insert(std::make_pair(path.substr(m_shaderSourcePathPrefix.size()), entry.last_write_time()));
+    }
+  }
+}
+
+// recompiles a shader via systemcall, for better performance and debugging should be compiled with shaderc library
+// TODO: MIGHT NOT WORK ON UNIX SYSTEMS, ONLY TESTED ON WINDOWS
+void HelloVulkan::compileShader(std::string path) {
+  std::string shaderName = path.substr(m_shaderSourcePathPrefix.size());
+  LOGI("Updating shader:  %s \n", shaderName.c_str());
+
+  std::string winInPath = path;
+
+  std::string winOutPath = m_shaderCompilePathPrefix + shaderName + ".spv";
+
+  std::string command =
+      "\"\"F:/Programs\\VulkanSDK/1.3.221.0/bin/glslangValidator.exe\" -g --target-env vulkan1.2 -o \"" + winOutPath
+      + "\" \"" + winInPath + "\"\"";
+
+  // this suppresses the console output from the command (command differs on windows and unix)
+  #if defined(_WIN32) || defined(_WIN64)
+    command += " > nul";
+  #else
+    command += " > /dev/null";
+  #endif
+
+  system(command.c_str());
+}
+
+// Checks if a shader file or an #include file for a shader got updated and recompiles affected shaders
+// note: although this method checks for changed shader files first and afterwards for changed #include
+//       files, this should in praxis never lead to recompilation of the same shader, as the user would
+//       have to change a shader and a #include file in the same frame -> so no noticable overhead
+void HelloVulkan::compileChangedShaders() {
+  // recompiles every changed shader file
+  for(const auto& entry : std::filesystem::directory_iterator(m_shaderCompilePathPrefix))
+  {
+    // get name of source shader
+    std::string shaderSourcePath = entry.path().string().substr(m_shaderCompilePathPrefix.size());
+    shaderSourcePath             = m_shaderSourcePathPrefix + shaderSourcePath.erase(shaderSourcePath.size() - 4);
+
+    // check if source shader exists and get its last write time
+    std::filesystem::file_time_type lastSourceTime;
+    try
+    {
+      lastSourceTime = std::filesystem::last_write_time(shaderSourcePath);
+    }
+    catch(...)
+    {
+      LOGI("Shader source file not found:  %s \n", (shaderSourcePath).c_str());
+      continue;
+    }
+
+    // recompile shader if it is not up to date with the source file
+    if(entry.last_write_time() < lastSourceTime)
+    {
+      compileShader(shaderSourcePath);
+    }
+  }
+
+  // recompile certain shaders, when their #include files get updated
+  if(compareLastWriteTime("host_device.h"))
+  {
+    // recompile all affected shaders
+   compileShader(m_shaderSourcePathPrefix + "raytrace.rgen");
+   compileShader(m_shaderSourcePathPrefix + "raytrace.rmiss");
+   compileShader(m_shaderSourcePathPrefix + "raytrace.rchit");
+   compileShader(m_shaderSourcePathPrefix + "raytrace2.rchit");
+   compileShader(m_shaderSourcePathPrefix + "raytrace.rint");
+
+    // update existing write times
+    updateLastWriteTime("host_device.h");
+    updateLastWriteTime("raycommon.glsl");
+    updateLastWriteTime("blending.glsl");
+    updateLastWriteTime("wavefront.glsl");
+  }
+
+  if(compareLastWriteTime("raycommon.glsl"))
+  {
+    // recompile all affected shaders
+    compileShader(m_shaderSourcePathPrefix + "raytrace.rgen");
+    compileShader(m_shaderSourcePathPrefix + "raytrace.rmiss");
+    compileShader(m_shaderSourcePathPrefix + "raytrace.rchit");
+    compileShader(m_shaderSourcePathPrefix + "raytrace2.rchit");
+    compileShader(m_shaderSourcePathPrefix + "raytrace.rint");
+
+    // update existing write times
+    updateLastWriteTime("raycommon.glsl");
+    updateLastWriteTime("blending.glsl");
+    updateLastWriteTime("wavefront.glsl");
+  }
+
+  if(compareLastWriteTime("blending.glsl"))
+  {
+    // recompile all affected shaders
+    compileShader(m_shaderSourcePathPrefix + "raytrace2.rchit");
+    compileShader(m_shaderSourcePathPrefix + "raytrace.rint");
+
+    // update existing write time
+    updateLastWriteTime("blending.glsl");
+  }
+
+  if(compareLastWriteTime("wavefront.glsl"))
+  {
+    // recompile all affected shaders
+    compileShader(m_shaderSourcePathPrefix + "raytrace.rchit");
+    compileShader(m_shaderSourcePathPrefix + "raytrace2.rchit");
+
+    // update existing write time
+    updateLastWriteTime("wavefront.glsl");
+  }
+}
+
+// reloads precompiled SPIR-V by deleting the old pipeline and creating a new one
+void HelloVulkan::reloadShaders() {
+  // wait for every vulkan command to end
+  vkDeviceWaitIdle(m_device);
+  // destroying old pipeline and SBT
+  vkDestroyPipeline(m_device, m_rtPipeline, nullptr);
+  vkDestroyPipelineLayout(m_device, m_rtPipelineLayout, nullptr);
+  m_alloc.destroy(m_rtSBTBuffer);
+
+  // creating new pipeline and SBT
+  createRtPipeline();
+  createShaderBindingTable();
+}
+
 //--------------------------------------------------------------------------------------------------
 // @author Josias
 // Creates an axis-aligned bounding box for a triangle that can have a certain amount of displacement
@@ -1161,13 +1296,12 @@ Aabb HelloVulkan::createAabbFromTriangle(TriangleObj t)
   return aabb;
 }
 
-void HelloVulkan::reloadShaders() {
-  // destroying old pipeline and SBT
-  vkDestroyPipeline(m_device, m_rtPipeline, nullptr);
-  vkDestroyPipelineLayout(m_device, m_rtPipelineLayout, nullptr);
-  m_alloc.destroy(m_rtSBTBuffer);
+bool HelloVulkan::compareLastWriteTime(std::string shaderName)
+{
+  return std::filesystem::last_write_time(m_shaderSourcePathPrefix + shaderName) > m_shaderWriteTimes.find(shaderName)->second;
+}
 
-  // creating new pipeline and SBT
-  createRtPipeline();
-  createShaderBindingTable();
+void HelloVulkan::updateLastWriteTime(std::string shaderName)
+{
+  m_shaderWriteTimes.find(shaderName)->second = std::filesystem::last_write_time(m_shaderSourcePathPrefix + shaderName);
 }

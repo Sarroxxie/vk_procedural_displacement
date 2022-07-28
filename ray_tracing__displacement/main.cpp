@@ -201,20 +201,14 @@ int main(int argc, char** argv)
   //       inside main loop with the current latest modification time 
   //         -> update latest modification time inside map for the according file
   //         -> recompile shader so it is ready for reloading
-  std::string shaderPaths = NVPSystem::exePath() + PROJECT_RELDIRECTORY + "shaders/";
 
-  const std::filesystem::file_time_type lastWriteTime =
-      std::filesystem::last_write_time(shaderPaths + "raytrace2.rchit");
+  // setting folder containing shaders
+  helloVk.m_shaderSourcePathPrefix = NVPSystem::exePath() + PROJECT_RELDIRECTORY + "shaders/";
 
-  const std::filesystem::file_time_type lastWriteTime2 =
-      std::filesystem::last_write_time(shaderPaths + "raytrace.rchit");
+  helloVk.m_shaderCompilePathPrefix = NVPSystem::exePath() + PROJECT_RELDIRECTORY + "spv/";
 
-  if(lastWriteTime > lastWriteTime2)
-  {
-    std::cout << "BIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIG" << std::endl;
-  }
-
-
+  // stores last write time for various shader files
+  helloVk.initShaderUpdater();
 
   helloVk.createOffscreenRender();
   helloVk.createDescriptorSetLayout();
@@ -317,11 +311,12 @@ int main(int argc, char** argv)
     vkEndCommandBuffer(cmdBuf);
     helloVk.submitFrame();
 
+    // recompiles changed shader files into SPIR-V files
+    helloVk.compileChangedShaders();
     
     if(reloadShaders)
     {
       reloadShaders = false;
-      vkDeviceWaitIdle(helloVk.getDevice());
       helloVk.reloadShaders();
     }
   }
