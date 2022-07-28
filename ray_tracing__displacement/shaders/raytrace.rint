@@ -7,7 +7,7 @@
 #extension GL_EXT_buffer_reference2 : require
 
 #include "raycommon.glsl"
-#include "wavefront.glsl"
+#include "host_device.h"
 #include "blending.glsl"
 
 // used between intersection shader and closest-hit shader (can only be one attribute -> may need struct later)

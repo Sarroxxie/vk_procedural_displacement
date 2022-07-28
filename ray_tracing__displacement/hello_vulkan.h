@@ -25,6 +25,8 @@
 #include "nvvk/memallocator_dma_vk.hpp"
 #include "nvvk/resourceallocator_vk.hpp"
 #include "shaders/host_device.h"
+#include <map>
+#include <filesystem>
 
 // #VKRay
 #include "nvvk/raytraceKHR_vk.hpp"
@@ -188,18 +190,28 @@ public:
   float displacementAmount = 1;
 
   // Array of objects and instances in the scene
-  std::vector<DispObjModel>    m_dispObjModel;   // Model on host
-  std::vector<DispObjDesc>     m_dispObjDesc;    // Model description for device access
-  std::vector<ObjInstance>     m_dispInstances;  // Scene model instances
+  std::vector<DispObjModel> m_dispObjModel;   // Model on host
+  std::vector<DispObjDesc>  m_dispObjDesc;    // Model description for device access
+  std::vector<ObjInstance>  m_dispInstances;  // Scene model instances
 
   nvvk::Buffer m_bDispObjDesc;  // Device buffer of the OBJ descriptions
+
+  // latest write time per shader relevant file
+  std::string                                            m_shaderSourcePathPrefix;
+  std::string                                            m_shaderCompilePathPrefix;
+  std::map<std::string, std::filesystem::file_time_type> m_shaderWriteTimes;
 
   void loadNonDisplacementModel(ObjLoader loader, nvmath::mat4f transform);
   void loadDisplacementModel(ObjLoader loader, nvmath::mat4f transform);
   auto displacementObjectToVkGeometryKHR(const DispObjModel& model);
+  void initShaderUpdater();
+  void compileShader(std::string path);
+  void compileChangedShaders();
   void reloadShaders();
 
 private:
   Aabb createAabbFromTriangle(TriangleObj t);
+  bool compareLastWriteTime(std::string shaderName);
+  void updateLastWriteTime(std::string shaderName);
   // \@author Josias
 };
