@@ -22,6 +22,7 @@
 
 
 #define STB_IMAGE_IMPLEMENTATION
+#define STB_IMAGE_WRITE_IMPLEMENTATION
 #include "obj_loader.h"
 #include "stb_image.h"
 
@@ -1307,4 +1308,109 @@ bool HelloVulkan::compareLastWriteTime(std::string shaderName)
 void HelloVulkan::updateLastWriteTime(std::string shaderName)
 {
   m_shaderWriteTimes.find(shaderName)->second = std::filesystem::last_write_time(m_shaderSourcePathPrefix + shaderName);
+}
+
+//--------------------------------------------------------------------------------------------------
+// Creating all textures and samplers
+//
+void HelloVulkan::createTextureImages2(const VkCommandBuffer& cmdBuf, const std::string inputTexture)
+{
+  VkSamplerCreateInfo samplerCreateInfo{VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO};
+  samplerCreateInfo.minFilter  = VK_FILTER_LINEAR;
+  samplerCreateInfo.magFilter  = VK_FILTER_LINEAR;
+  samplerCreateInfo.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
+  samplerCreateInfo.maxLod     = FLT_MAX;
+
+  VkFormat format = VK_FORMAT_R8G8B8A8_SRGB;
+
+  std::stringstream o;
+  int               texWidth, texHeight, texChannels;
+  o << "media/textures/" << inputTexture;
+  std::string txtFile = nvh::findFile(o.str(), defaultSearchPaths, true);
+
+  stbi_uc* stbi_pixels = stbi_load(txtFile.c_str(), &texWidth, &texHeight, &texChannels, STBI_rgb_alpha);
+
+  std::array<stbi_uc, 4> color{255u, 0u, 255u, 255u};
+
+  stbi_uc* pixels = stbi_pixels;
+  // Handle failure
+  if(!stbi_pixels)
+  {
+    texWidth = texHeight = 1;
+    texChannels          = 4;
+    pixels               = reinterpret_cast<stbi_uc*>(color.data());
+  }
+
+  VkDeviceSize bufferSize      = static_cast<uint64_t>(texWidth) * texHeight * sizeof(uint8_t) * 4;
+  auto         imgSize         = VkExtent2D{(uint32_t)texWidth, (uint32_t)texHeight};
+  auto         imageCreateInfo = nvvk::makeImage2DCreateInfo(imgSize, format, VK_IMAGE_USAGE_SAMPLED_BIT, true);
+
+  {
+    nvvk::Image image = m_alloc.createImage(cmdBuf, bufferSize, pixels, imageCreateInfo);
+    nvvk::cmdGenerateMipmaps(cmdBuf, image.image, format, imgSize, imageCreateInfo.mipLevels);
+    VkImageViewCreateInfo ivInfo  = nvvk::makeImageViewCreateInfo(image.image, imageCreateInfo);
+    nvvk::Texture         texture = m_alloc.createTexture(image, ivInfo, samplerCreateInfo);
+
+    m_textures.push_back(texture);
+  }
+
+  stbi_image_free(stbi_pixels);
+}
+
+// Creates one mip level above the input texture. Only works for power of 2 quadratic textures. The program WILL crash, if the input
+// texture does not exist or if the texture doesn't have the required format. VERY FRAGILE FUNCTION AT THE MOMENT!
+void HelloVulkan::createMips(const std::string inputTexture) {
+  // load base texture from file
+  std::stringstream o;
+  int               texWidth, texHeight, texChannels;
+  o << "media/textures/" << inputTexture;
+  std::string txtFile = nvh::findFile(o.str(), defaultSearchPaths, true);
+
+  // this data is used for miplevel = 0
+  stbi_uc* stbi_pixels = stbi_load(txtFile.c_str(), &texWidth, &texHeight, &texChannels, STBI_rgb_alpha);
+
+  stbi_uc* mip = NULL;
+  // as only power of 2 and quadratic textures are supported at the moment, 
+  // it is sufficient to store only the size and not width AND height
+  int      mipSize = texWidth / 2;
+  size_t mip1Size = (static_cast<unsigned long long>(mipSize) * mipSize * texChannels) * sizeof(*mip);
+  mip     = reinterpret_cast<stbi_uc*>(malloc(mip1Size));
+
+  // iteration over the texels from the mip level 1 -> left to right and top to bottom
+  for(int i = 0; i < mipSize * mipSize; i++)
+  {
+    // THE FOLLOWING INDICES DO NOT TAKE THE NUMBER OF TEXCHANNELS INTO ACCOUNT!!
+    // row and column of mip level 1
+    int mipRow = i / mipSize;
+    int mipCol = i % mipSize;
+    // row and column of mip level 0 -> top left pixel of the desired block of 4
+    int row = mipRow * 2;
+    int col = mipCol * 2;
+
+    // indices for mip level 0 -> all 4 needed for mip map calculation
+    int topLeft     = row * texWidth + col;
+    int topRight    = row * texWidth + col + 1;
+    int bottomLeft  = (row + 1) * texWidth + col;
+    int bottomRight = (row + 1) * texWidth + col + 1;
+
+    // only red channels are evaluated as all channels contain the same value in one texel
+    stbi_uc value0 = *(stbi_pixels + topLeft * texChannels);
+    stbi_uc value1 = *(stbi_pixels + topRight * texChannels);
+    stbi_uc value2 = *(stbi_pixels + bottomLeft * texChannels);
+    stbi_uc value3 = *(stbi_pixels + bottomRight * texChannels);
+
+    // linear blending, minimum and maximum of the 4 fetched texels
+    stbi_uc linear = 0.25 * (value0 + value1 + value2 + value3);
+    stbi_uc min    = std::min(std::min(value0, value1), std::min(value2, value3));
+    stbi_uc max    = std::max(std::max(value0, value1), std::max(value2, value3));
+
+    // write linear blend result into all color channels of mip level 1 for testing purposes
+    // for final texture layout, see notes -> (linear, min, max, 255u)
+    *(mip + (mipRow * mipSize + mipCol) * texChannels)       = linear;
+    *(mip + (mipRow * mipSize + mipCol) * texChannels + 1)   = linear;
+    *(mip + (mipRow * mipSize + mipCol) * texChannels + 2)   = linear;
+    *(mip + (mipRow * mipSize + mipCol) * texChannels + 3)   = 255u;
+  }
+  // TODO: remove this debug output, it only serves testing purposes
+  stbi_write_png("X:\\Bibliotheken\\Downloads\\mip1.png", mipSize, mipSize, texChannels, mip, mipSize * texChannels);
 }

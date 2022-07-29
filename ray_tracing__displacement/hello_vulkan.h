@@ -27,6 +27,7 @@
 #include "shaders/host_device.h"
 #include <map>
 #include <filesystem>
+#include <stb_image_write.h>
 
 // #VKRay
 #include "nvvk/raytraceKHR_vk.hpp"
@@ -208,6 +209,9 @@ public:
   void compileShader(std::string path);
   void compileChangedShaders();
   void reloadShaders();
+
+  void createTextureImages2(const VkCommandBuffer& cmdBuf, const std::string inputTexture);
+  void createMips(const std::string inputTexture);
 
 private:
   Aabb createAabbFromTriangle(TriangleObj t);
