@@ -1158,13 +1158,16 @@ void HelloVulkan::compileShader(std::string path) {
   std::string shaderName = path.substr(m_shaderSourcePathPrefix.size());
   LOGI("Updating shader:  %s \n", shaderName.c_str());
 
+  // this will get the path to the VulkanSDK via the environment variables
+  //   -> if the variable "VULKAN_SDK" is not defined, shader recompiling will not work!
+  std::string vulkanPath = std::string(getenv("VULKAN_SDK"));
+
   std::string winInPath = path;
 
   std::string winOutPath = m_shaderCompilePathPrefix + shaderName + ".spv";
 
-  std::string command =
-      "\"\"F:/Programs\\VulkanSDK/1.3.221.0/bin/glslangValidator.exe\" -g --target-env vulkan1.2 -o \"" + winOutPath
-      + "\" \"" + winInPath + "\"\"";
+  std::string command = "\"\"" + vulkanPath + "\\bin\\glslangValidator.exe\" -g --target-env vulkan1.2 -o \""
+                        + winOutPath + "\" \"" + winInPath + "\"\"";
 
   // this suppresses the console output from the command (command differs on windows and unix)
   #if defined(_WIN32) || defined(_WIN64)
