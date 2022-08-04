@@ -207,6 +207,10 @@ int main(int argc, char** argv)
 
   helloVk.m_shaderCompilePathPrefix = NVPSystem::exePath() + PROJECT_RELDIRECTORY + "spv/";
 
+  //helloVk.createMips("noise_heightmap.png");
+
+  //helloVk.createTextureImages2("noise_heightmap.png");
+
   helloVk.createMips("noise_heightmap.png");
 
   // stores last write time for various shader files
