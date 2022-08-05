@@ -68,5 +68,6 @@ public:
   std::vector<uint32_t>    m_indices;
   std::vector<MaterialObj> m_materials;
   std::vector<std::string> m_textures;
+  std::vector<int>         m_displacementTextureIndices;
   std::vector<int32_t>     m_matIndx;
 };

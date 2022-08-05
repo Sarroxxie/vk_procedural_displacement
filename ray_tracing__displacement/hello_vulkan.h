@@ -27,6 +27,8 @@
 #include "shaders/host_device.h"
 #include <map>
 #include <filesystem>
+#include "stb_image.h"
+#include <stb_image_write.h>
 
 // #VKRay
 #include "nvvk/raytraceKHR_vk.hpp"
@@ -209,9 +211,24 @@ public:
   void compileChangedShaders();
   void reloadShaders();
 
+  void createMips(VkCommandBuffer cmdBuf, const std::string inputTexture);
+
 private:
   Aabb createAabbFromTriangle(TriangleObj t);
   bool compareLastWriteTime(std::string shaderName);
   void updateLastWriteTime(std::string shaderName);
+
+  void createSingleMip(stbi_uc* input, stbi_uc* output, int inputSize, int texChannels);
+  void createSingleDebugMip(stbi_uc* output, int inputSize, int texChannels, std::array<stbi_uc, 4> color);
+
+  // helper functions used for uploading mip maps
+  void     createBuffer(VkDeviceSize size, VkBufferUsageFlags usage, VkMemoryPropertyFlags properties, VkBuffer& buffer, VkDeviceMemory& bufferMemory);
+  uint32_t findMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags properties);
+  void     transitionImageLayout(VkCommandBuffer cmdBuf, VkImage image, VkFormat format, VkImageLayout oldLayout, VkImageLayout newLayout, int miplevels);
+  void     copyBufferToImage(VkCommandBuffer cmdBuf, VkBuffer buffer, VkImage image, uint32_t width, uint32_t height);
+
+  // used to store reference to buffers used for mip map generation so they can get destroyed when an object is fully loaded
+  std::vector<VkBuffer> m_stagingBuffers;
+  std::vector<VkDeviceMemory> m_stagingBufferMemory;
   // \@author Josias
 };

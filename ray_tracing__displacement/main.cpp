@@ -47,7 +47,6 @@
 std::vector<std::string> defaultSearchPaths;
 const float              MAX_DISPLACEMENT = 5.f;
 const float              MAX_OFFSET       = 5.f;
-const float              triangleSize     = 0.25f;
 bool                     reloadShaders    = false;
 
 
@@ -194,13 +193,6 @@ int main(int argc, char** argv)
   //helloVk.loadModel(nvh::findFile("media/scenes/drone_vulkan_rt.obj", defaultSearchPaths, true));
   //helloVk.loadModel(nvh::findFile("media/scenes/plane.obj", defaultSearchPaths, true));
   helloVk.loadModel(nvh::findFile("media/scenes/debug_plane.obj", defaultSearchPaths, true));
-
-
-  // TODO: this is code for checking, when a file was last written to -> use to recompile shaders
-  // TODO: create a map containing the latest modification times for each shader file and compare them 
-  //       inside main loop with the current latest modification time 
-  //         -> update latest modification time inside map for the according file
-  //         -> recompile shader so it is ready for reloading
 
   // setting folder containing shaders
   helloVk.m_shaderSourcePathPrefix = NVPSystem::exePath() + PROJECT_RELDIRECTORY + "shaders/";
