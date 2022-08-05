@@ -37,6 +37,7 @@
 #include "nvvk/shaders_vk.hpp"
 #include "nvvk/buffers_vk.hpp"
 #include <random>
+#include <algorithm>
 
 extern std::vector<std::string> defaultSearchPaths;
 
@@ -319,11 +320,42 @@ void HelloVulkan::loadDisplacementModel(ObjLoader loader, nvmath::mat4f transfor
   model.aabbBuffer     = m_alloc.createBuffer(cmdBuf, aabbs,
                                               VK_BUFFER_USAGE_STORAGE_BUFFER_BIT
                                                   | VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR | flag);
+
+  // @author Josias
+  // TODO: find a way to only use one "createCommandBuffer()" and one "submitAndWait()" for the whole function
+  //       it might be necessary to store handles to the buffer and buffer memory used in "createMips()" to
+  //       destroy after the single "submitAndWait()" call
   // Creates all textures found and find the offset for this model
   auto txtOffset = static_cast<uint32_t>(m_textures.size());
 
-  createTextureImages(cmdBuf, loader.m_textures);
+  for(int i = 0; i < loader.m_textures.size(); i++)
+  {
+    if(std::find(loader.m_displacementTextureIndices.begin(), loader.m_displacementTextureIndices.end(), i)
+       != loader.m_displacementTextureIndices.end())
+    {
+      createMips(cmdBuf, loader.m_textures[i]);
+    }
+    else
+    {
+      createTextureImages(cmdBuf, std::vector<std::string>{loader.m_textures[i]});
+    }
+  }
   cmdBufGet.submitAndWait(cmdBuf);
+
+  // destroy resources used for custom mip map creation
+  for(auto& buffer : m_stagingBuffers)
+  {
+    vkDestroyBuffer(m_device, buffer, nullptr);
+  }
+  m_stagingBuffers.clear();
+
+  for(auto& memory : m_stagingBufferMemory)
+  {
+    vkFreeMemory(m_device, memory, nullptr);
+  }
+  m_stagingBufferMemory.clear();
+  // \@author Josias
+
   m_alloc.finalizeAndReleaseStaging();
 
   std::string objNb = std::to_string(m_dispObjModel.size());
@@ -511,11 +543,6 @@ void HelloVulkan::destroyResources()
     m_alloc.destroy(m.matIndexBuffer);
     m_alloc.destroy(m.aabbBuffer);
   }
-  // TODO: find out why sampler destruction throws an exception
-  //vkDestroySampler(m_device, m_textureSampler, nullptr);
-  //vkDestroyImageView(m_device, m_textureImageView, nullptr);
-  //vkDestroyImage(m_device, m_textureImage, nullptr);
-  vkFreeMemory(m_device, m_textureImageMemory, nullptr);
   // \@author Josias
 
   for(auto& t : m_textures)
@@ -1314,16 +1341,16 @@ void HelloVulkan::updateLastWriteTime(std::string shaderName)
   m_shaderWriteTimes.find(shaderName)->second = std::filesystem::last_write_time(m_shaderSourcePathPrefix + shaderName);
 }
 
-
 // Creates one mip level above the input texture. Only works for power of 2 quadratic textures. The program WILL crash, if the input
 // texture does not exist or if the texture doesn't have the required format. VERY FRAGILE FUNCTION AT THE MOMENT!
-void HelloVulkan::createMips(const std::string inputTexture) {
-  // 1.  load base texture from file
+void HelloVulkan::createMips(VkCommandBuffer cmdBuf, const std::string inputTexture)
+{
+  // load base texture from file
   std::stringstream o;
   int               texWidth, texHeight, texChannels;
   o << "media/textures/" << inputTexture;
   std::string txtFile = nvh::findFile(o.str(), defaultSearchPaths, true);
-  stbi_uc* pixels = stbi_load(txtFile.c_str(), &texWidth, &texHeight, &texChannels, STBI_rgb_alpha);
+  stbi_uc*    pixels  = stbi_load(txtFile.c_str(), &texWidth, &texHeight, &texChannels, STBI_rgb_alpha);
 
   // texWidth == texHeight through contract -> only power of 2 textures allowed
   uint32_t mipLevels = nvvk::mipLevels(VkExtent2D{(uint32_t)texWidth, (uint32_t)texWidth});
@@ -1333,7 +1360,7 @@ void HelloVulkan::createMips(const std::string inputTexture) {
   // allocate memory for the whole texture data
   stbi_uc* data = static_cast<stbi_uc*>(malloc(totalSize));
 
-  // copy pixels into data array
+  // copy pixels into data array (so mip level 0 is in there)
   for(int i = 0; i < texWidth * texWidth * 4; i++)
   {
     *(data + i) = *(pixels + i);
@@ -1342,123 +1369,74 @@ void HelloVulkan::createMips(const std::string inputTexture) {
   // free the stbi image data as it is no longer needed
   stbi_image_free(pixels);
 
-  // these values are used throughout the iteration
+  // initialize values for the first iteration
   int      inputSize     = texWidth;
   stbi_uc* inputPointer  = data;
   stbi_uc* outputPointer = data + texWidth * texWidth * texChannels;
 
-
-  // 2.  calculate mip levels on CPU and store inside a data array
+  // calculate mip levels on CPU and store inside the data array
   for(int i = 1; i < mipLevels; i++)
   {
     createSingleMip(inputPointer, outputPointer, inputSize, texChannels);
-    //createSingleDebugMip(outputPointer, inputSize, texChannels, std::array<stbi_uc, 4>{0u, 0u, 255u, 255u});
-    // recalculate iteration values
-    inputSize /= 2;
-    inputPointer = outputPointer;
-    outputPointer += inputSize * inputSize * texChannels;  // inputSize is now the size of the old mipmap
 
-    // debug output of the mip levels
-    std::string path = "X:\\Bibliotheken\\Downloads\\debug\\mip" + std::to_string(i) + ".png";
-    stbi_write_png(path.c_str(), inputSize, inputSize, texChannels, inputPointer, inputSize * texChannels);
+    inputSize /= 2;                                        // with every mip level the size is half of the value before
+    inputPointer = outputPointer;                          // the last mip level is the input for the next one
+    outputPointer += inputSize * inputSize * texChannels;  // inputSize is now the size of the old mipmap
   }
 
-  //  4. create VkDeviceMemory to store the data array
-  VkBuffer stagingBuffer;
+  // create a VkBuffer to store the data array on GPU
+  VkBuffer       stagingBuffer;
   VkDeviceMemory stagingBufferMemory;
 
   createBuffer(totalSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
                VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, stagingBuffer, stagingBufferMemory);
 
-  // copy texture data array from CPU to GPU
+  // copy texture data array from CPU to GPU Buffer
   void* bufferData;
   vkMapMemory(m_device, stagingBufferMemory, 0, totalSize, 0, &bufferData);
   memcpy(bufferData, data, static_cast<size_t>(totalSize));
   vkUnmapMemory(m_device, stagingBufferMemory);
 
-  free(data);
-
-
-  // 5.  create VkImageCreateInfo
-  VkImageCreateInfo imageInfo{};
-  imageInfo.sType         = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
-  imageInfo.imageType     = VK_IMAGE_TYPE_2D;
-  imageInfo.extent.width  = texWidth;
-  imageInfo.extent.height = texWidth;
-  imageInfo.extent.depth  = 1;
-  imageInfo.mipLevels     = mipLevels;
-  imageInfo.arrayLayers   = 1;
-  imageInfo.format        = VK_FORMAT_R8G8B8A8_SRGB;
-  imageInfo.tiling        = VK_IMAGE_TILING_OPTIMAL;
-  imageInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-  imageInfo.usage         = VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
-  imageInfo.samples       = VK_SAMPLE_COUNT_1_BIT;
-  imageInfo.sharingMode   = VK_SHARING_MODE_EXCLUSIVE;
-
-
-
-  // 6.  create a VkImage via vkCreateImage
-  if(vkCreateImage(m_device, &imageInfo, nullptr, &m_textureImage) != VK_SUCCESS)
-  {
-    throw std::runtime_error("failed to create image!");
-  }
-
-  VkMemoryRequirements memRequirements;
-  vkGetImageMemoryRequirements(m_device, m_textureImage, &memRequirements);
-
-  VkMemoryAllocateInfo allocInfo{};
-  allocInfo.sType           = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
-  allocInfo.allocationSize  = memRequirements.size;
-  allocInfo.memoryTypeIndex = findMemoryType(memRequirements.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
-
-  if(vkAllocateMemory(m_device, &allocInfo, nullptr, &m_textureImageMemory) != VK_SUCCESS)
-  {
-    throw std::runtime_error("failed to allocate image memory!");
-  }
-  vkBindImageMemory(m_device, m_textureImage, m_textureImageMemory, 0);
-
-  // copy buffer data into the image (this is internally done for each mip map)
-  nvvk::CommandPool cmdBufGet(m_device, m_graphicsQueueIndex);
-  VkCommandBuffer   cmdBuf = cmdBufGet.createCommandBuffer();
-
-  transitionImageLayout(cmdBuf, m_textureImage, VK_FORMAT_R8G8B8A8_SRGB, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, mipLevels);
-  copyBufferToImage(cmdBuf, stagingBuffer, m_textureImage, static_cast<uint32_t>(texWidth), static_cast<uint32_t>(texWidth));
-  transitionImageLayout(cmdBuf, m_textureImage, VK_FORMAT_R8G8B8A8_SRGB, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-                        VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, mipLevels);
-
-  cmdBufGet.submitAndWait(cmdBuf);
-
+  // define properties of texture sampler
   VkSamplerCreateInfo samplerCreateInfo{VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO};
   samplerCreateInfo.minFilter  = VK_FILTER_LINEAR;
   samplerCreateInfo.magFilter  = VK_FILTER_LINEAR;
   samplerCreateInfo.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
   samplerCreateInfo.maxLod     = FLT_MAX;
 
-  if(vkCreateSampler(m_device, &samplerCreateInfo, nullptr, &m_textureSampler) != VK_SUCCESS)
-  {
-    throw std::runtime_error("failed to create texture sampler!");
-  }
+  VkFormat format = VK_FORMAT_R8G8B8A8_SRGB;
 
-  // creating image view
-  m_textureImageView = createImageView(m_textureImage, VK_FORMAT_R8G8B8A8_SRGB, mipLevels);
+  // specify the image create info
+  VkImageCreateInfo imageCreateInfo = nvvk::makeImage2DCreateInfo(VkExtent2D{(uint32_t)texWidth, (uint32_t)texWidth},
+                                                                  format, VK_IMAGE_USAGE_SAMPLED_BIT, true);
 
-  // adding image to descriptor set
-  m_imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-  m_imageInfo.imageView   = m_textureImageView;
-  m_imageInfo.sampler     = m_textureSampler;
+  // create VkImage
+  nvvk::Image image = m_alloc.createImage(cmdBuf, totalSize, data, imageCreateInfo);
 
-  nvvk::Texture texture{};
-  texture.image = m_textureImage;
-  texture.descriptor = m_imageInfo;
+  // free the data array on CPU as it is no longer needed there
+  free(data);
 
-  //VkImageViewCreateInfo ivInfo  = nvvk::makeImageViewCreateInfo(image.image, imageCreateInfo);
+  // copy the buffer data into the VkImage (each mip level as subresource)
+  transitionImageLayout(cmdBuf, image.image, VK_FORMAT_R8G8B8A8_SRGB, VK_IMAGE_LAYOUT_UNDEFINED,
+                        VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, mipLevels);
+  copyBufferToImage(cmdBuf, stagingBuffer, image.image, static_cast<uint32_t>(texWidth), static_cast<uint32_t>(texWidth));
+  transitionImageLayout(cmdBuf, image.image, VK_FORMAT_R8G8B8A8_SRGB, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                        VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, mipLevels);
 
-  // TODO: add correct memHandle to the nvvk::Texture -> only makes problems when destroying the image
+  // register sampler and ImageViewCreateInfo
+  VkImageViewCreateInfo ivInfo  = nvvk::makeImageViewCreateInfo(image.image, imageCreateInfo);
+  nvvk::Texture         texture = m_alloc.createTexture(image, ivInfo, samplerCreateInfo);
+
+  // add created texture to the array containing all textures
   m_textures.push_back(texture);
 
-  // 16. destroy the initial buffer and free its memory
-  vkDestroyBuffer(m_device, stagingBuffer, nullptr);
-  vkFreeMemory(m_device, stagingBufferMemory, nullptr);
+  // store buffer and buffer memory for later destruction
+  m_stagingBuffers.push_back(stagingBuffer);
+  m_stagingBufferMemory.push_back(stagingBufferMemory);
+
+  // destroy the data buffer (that was on GPU) and free its memory
+  //vkDestroyBuffer(m_device, stagingBuffer, nullptr);
+  //vkFreeMemory(m_device, stagingBufferMemory, nullptr);
 }
 
 // creates a single mip level from input texture
@@ -1518,8 +1496,6 @@ void HelloVulkan::createSingleDebugMip(stbi_uc* output, int inputSize, int texCh
     int mipCol = i % mipSize;
 
     // set the color into every pixel
-    //std::cout << "ROW: " << mipRow << std::endl;
-    //std::cout << "COL: " << mipCol << std::endl;
     *(output + (mipRow * mipSize + mipCol) * texChannels)             = color[0];
     *(output + (mipRow * mipSize + mipCol) * texChannels + 1)         = color[1];
     *(output + (mipRow * mipSize + mipCol) * texChannels + 2)         = color[2];
@@ -1638,26 +1614,4 @@ void HelloVulkan::copyBufferToImage(VkCommandBuffer cmdBuf, VkBuffer buffer, VkI
     offset += static_cast<uint64_t>(mipSize) * mipSize * 4;
     mipSize /= 2;
   }
-}
-
-VkImageView HelloVulkan::createImageView(VkImage image, VkFormat format, int miplevels)
-{
-  VkImageViewCreateInfo viewInfo{};
-  viewInfo.sType                           = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
-  viewInfo.image                           = image;
-  viewInfo.viewType                        = VK_IMAGE_VIEW_TYPE_2D;
-  viewInfo.format                          = format;
-  viewInfo.subresourceRange.aspectMask     = VK_IMAGE_ASPECT_COLOR_BIT;
-  viewInfo.subresourceRange.baseMipLevel   = 0;
-  viewInfo.subresourceRange.levelCount     = miplevels;
-  viewInfo.subresourceRange.baseArrayLayer = 0;
-  viewInfo.subresourceRange.layerCount     = 1;
-
-  VkImageView imageView;
-  if(vkCreateImageView(m_device, &viewInfo, nullptr, &imageView) != VK_SUCCESS)
-  {
-    throw std::runtime_error("failed to create texture image view!");
-  }
-
-  return imageView;
 }

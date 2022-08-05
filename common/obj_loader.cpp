@@ -56,6 +56,7 @@ void ObjLoader::loadModel(const std::string& filename)
     if(!material.displacement_texname.empty())
     {
       m_textures.push_back(material.displacement_texname);
+      m_displacementTextureIndices.push_back(static_cast<int>(m_textures.size()) - 1);
       m.dispTextureID = static_cast<int>(m_textures.size()) - 1;
     }
 
