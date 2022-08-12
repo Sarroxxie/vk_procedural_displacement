@@ -23,8 +23,8 @@ layout(set = 1, binding = eTextures) uniform sampler2D textureSamplers[];
 
 layout(push_constant) uniform _PushConstantRay { PushConstantRay pcRay; };
 
-const int MAX_STEPS = 600;
-const float STEP_SIZE = 0.05;
+const int MAX_STEPS = 300;
+const float STEP_SIZE = 0.1;
 
 
 struct Ray
@@ -68,6 +68,154 @@ vec3 hitTriangle(const Triangle t, const Ray r)
     return vec3(0,0,-1);
   float tHit = f * dot(e2, z);
   return vec3(u,v,tHit);
+}
+
+// stores the integer coordinate of a texel and the LoD level it belongs to
+struct Texel
+{
+  ivec2 coord;
+  int lod;
+};
+
+// used for texel comparison in "traversal()" function
+bool texelEquals(Texel t1, Texel t2) {
+  if (t1.coord == t2.coord && t1.lod == t2.lod)
+    return true;
+  return false;
+}
+
+// these functions are used for D-BVH traversal
+void down(inout Texel texel) {
+  texel.lod--;
+  texel.coord *= 2;
+  return;
+}
+
+// these functions are used for D-BVH traversal
+void up(inout Texel texel) {
+  texel.lod++;
+  texel.coord /= 2;
+  return;
+}
+
+// these functions are used for D-BVH traversal
+//
+// for each modulo 2x2 texel block, the "next" texel is:
+// (0,0) -> (0,1)
+// (0,1) -> (1,0)
+// (1,0) -> (1,1)
+// (1,1) -> raise LoD level and repeat
+void next(inout Texel texel) {
+  // TODO: find suitable break condition -> this should only be a problem if "next()" is called on the bottom right texel (no matter the LoD)
+  //       -> this may not be a problem as the "next()" of the last texel will only be used for coordinate comparison and not for sampling
+  while (true) {
+    switch (2*(texel.coord.x % 2) + texel.coord.y % 2) {
+
+    // texelCoord = (0,1)
+    case 1:
+      texel.coord.y--;
+      // TODO: in the paper there is "texelCoord++" but I think it has to be like this to fulfill purpose
+      texel.coord.x++;
+      return;
+
+    // texelCoord = (1,1)
+    case 3:
+      up(texel);
+      continue;
+
+    // texelCoord = (0,0) or (1,0)
+    default:
+      texel.coord.y++;
+      return;
+    }
+  }
+}
+/*
+// these functions are used for D-BVH traversal
+float traversal(Ray ray, Triangle triangle, int targetLoD) {
+  float tHit = -1;
+  Texel texel, endtexel;
+  // TODO: implement "root()" function
+  texel = root(triangle);
+  endtexel = root(triangle);
+  next(endtexel);
+
+  while (!texelEquals(texel, endtexel)) {
+    // implement "outside()", "miss()" and "box()" functions
+    if (outside(texel, triangle) || miss(ray, box(texel)) {
+      next(texel);
+    } else if (texel.lod <= targetLoD) {
+      // TODO: implement "local_intersection()" function
+      float hit = local_intersection(texel, ray);
+      if (hit >= 0)
+        tHit = hit;
+      next(texel);
+    } else {
+      down(texel);
+    }
+  }
+  return tHit;
+}*/
+
+// perform raymarching to calculate intersection with the displaced surface
+float raymarching(Ray ray, Triangle t, out vec2 outTexCoord, out vec3 outWorldNrm) {
+  // ray marching
+  float tHit = -1;
+  Ray march;
+  march.origin = ray.origin;
+  march.direction = ray.direction;
+  // TODO: find more accurate interpolation here
+  vec3 normal = normalize(t.v0.nrm + t.v1.nrm + t.v2.nrm);
+  Ray intersect;
+  intersect.direction = -normal;
+  
+  for (int i = 0; i < MAX_STEPS; i++)
+  {
+    march.origin += STEP_SIZE * march.direction;
+    intersect.origin = march.origin;
+    vec3 baryzentrics = hitTriangle(t, intersect);
+    vec2 texCoord = t.v0.texCoord * (1 - baryzentrics.x - baryzentrics.y) + t.v1.texCoord * baryzentrics.x + t.v2.texCoord * baryzentrics.y;
+
+    // skips the height evaluation if the ray march origin is not located above the triangle
+    if (baryzentrics.z < 0)
+      continue;
+
+    // experimental to calculate normal (https://stackoverflow.com/questions/5281261/generating-a-normal-map-from-a-height-map)
+    // 4096x4096 is resolution of the height map
+
+    // experimental tiling and blending
+    float height = proceduralTilingAndBlending(texCoord, textureSamplers[nonuniformEXT(t.txtOffset)], pcRay.blendingOffset).x;
+    height = clamp(height, 0, 1) * pcRay.displacementAmount;
+
+    // TODO: ray marching should stop if exiting the bounding box
+    // TODO: ray marching only works for triangles parallel to the ground plane for now
+    if (march.origin.y < height + t.v0.pos.y){
+      tHit = STEP_SIZE * i;
+      
+      // TODO: should this be evaluated in the closest hit shader? -> new method for normal calculation from height map
+      vec2 coordT, coordR, coordB, coordL;
+      coordT = texCoord + vec2(0,1) * 1/4096;  //s12
+      coordR = texCoord + vec2(1,0) * 1/4096;  //s21
+      coordB = texCoord + vec2(0,-1) * 1/4096; //s10
+      coordL = texCoord + vec2(-1,0) * 1/4096; //s01
+      float top, right, bottom, left;
+      top = proceduralTilingAndBlending(coordT, textureSamplers[nonuniformEXT(t.txtOffset)], pcRay.blendingOffset).x * pcRay.displacementAmount;
+      right = proceduralTilingAndBlending(coordR, textureSamplers[nonuniformEXT(t.txtOffset)], pcRay.blendingOffset).x * pcRay.displacementAmount;
+      bottom = proceduralTilingAndBlending(coordB, textureSamplers[nonuniformEXT(t.txtOffset)], pcRay.blendingOffset).x * pcRay.displacementAmount;
+      left = proceduralTilingAndBlending(coordL, textureSamplers[nonuniformEXT(t.txtOffset)], pcRay.blendingOffset).x * pcRay.displacementAmount;
+
+      vec3 va = normalize(vec3(2,0,right - left));
+      vec3 vb = normalize(vec3(0,2,bottom - top));
+      
+      
+      // setting world normal for use in closest-hit shader
+      //outWorldNrm = cross(va, vb).yzx;
+      outTexCoord = texCoord;
+      outWorldNrm = vec3(0,1,0);
+      break;
+    }
+  }
+  return tHit;
 }
 
 
@@ -122,64 +270,12 @@ void main()
 
   float tHitAABB = hitAabb(aabb, ray);
 
-  // ray marching
-  float newHit = -1;
-  // start raymarching at hit with AABB and in direction of the ray
-  Ray march;
-  march.origin = ray.origin + ray.direction * tHitAABB;
-  march.direction = ray.direction;
-  
-  for (int i = 0; i < MAX_STEPS; i++)
-  {
-    march.origin += STEP_SIZE * march.direction;
-    Ray intersect;
-    intersect.origin = march.origin;
-    // TODO: find more accurate interpolation here
-    vec3 normal = normalize(v0.nrm + v1.nrm + v2.nrm);
-    intersect.direction = -normal;
-    vec3 baryzentrics = hitTriangle(triangle, intersect);
-    vec2 texCoord = v0.texCoord * (1 - baryzentrics.x - baryzentrics.y) + v1.texCoord * baryzentrics.x + v2.texCoord * baryzentrics.y;
+  Ray marchStart;
+  marchStart.origin = ray.origin + ray.direction * tHitAABB;
+  marchStart.direction = ray.direction;
 
-    // skips the height evaluation if the ray march origin is not located above the triangle
-    if (baryzentrics.z < 0)
-      continue;
-
-    // experimental to calculate normal (https://stackoverflow.com/questions/5281261/generating-a-normal-map-from-a-height-map)
-    // 4096x4096 is resolution of the height map
-    ivec2 texelCoord = ivec2(texCoord * 4096);
-    //float height = texelFetch(textureSampler, texelCoord, 0).x * pcRay.displacementAmount;
-
-    // experimental tiling and blending
-    float height = proceduralTilingAndBlending(texCoord, textureSamplers[nonuniformEXT(triangle.txtOffset)], offset).x * pcRay.displacementAmount;
-    height = clamp(height, 0, pcRay.displacementAmount);
-
-    // TODO: ray marching should stop if exiting the bounding box
-    // TODO: ray marching only works for triangles parallel to the ground plane for now
-    if (march.origin.y < height + v0.pos.y){
-      newHit = STEP_SIZE * i;
-      
-      // TODO: should this be evaluated in the closest hit shader? -> new method for normal calculation from height map
-      vec2 coordT, coordR, coordB, coordL;
-      coordT = texCoord + vec2(0,1) * 1/4096;  //s12
-      coordR = texCoord + vec2(1,0) * 1/4096;  //s21
-      coordB = texCoord + vec2(0,-1) * 1/4096; //s10
-      coordL = texCoord + vec2(-1,0) * 1/4096; //s01
-      float top, right, bottom, left;
-      top = proceduralTilingAndBlending(coordT, textureSamplers[nonuniformEXT(triangle.txtOffset)], offset).x * pcRay.displacementAmount;
-      right = proceduralTilingAndBlending(coordR, textureSamplers[nonuniformEXT(triangle.txtOffset)], offset).x * pcRay.displacementAmount;
-      bottom = proceduralTilingAndBlending(coordB, textureSamplers[nonuniformEXT(triangle.txtOffset)], offset).x * pcRay.displacementAmount;
-      left = proceduralTilingAndBlending(coordL, textureSamplers[nonuniformEXT(triangle.txtOffset)], offset).x * pcRay.displacementAmount;
-
-      vec3 va = normalize(vec3(2,0,right - left));
-      vec3 vb = normalize(vec3(0,2,bottom - top));
-      
-      // setting world normal for use in closest-hit shader
-      //intPayload.worldNrm = cross(va, vb).yzx;
-      intPayload.texCoord = texCoord;
-      intPayload.worldNrm = vec3(0,1,0);
-      break;
-    }
-  }
+  // calculate intersection point
+  float newHit = raymarching(marchStart, triangle, intPayload.texCoord, intPayload.worldNrm);
   
   if (newHit > 0)
     reportIntersectionEXT(newHit + tHitAABB, KIND_TRIANGLE);

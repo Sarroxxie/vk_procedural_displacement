@@ -66,12 +66,14 @@ void main()
     // TODO: grabbing mat.dispTextureID for debugging purposes (needs mat.diffTextureID later)
     uint txtId = mat.dispTextureID + dispObjDesc.i[gl_InstanceCustomIndexEXT].txtOffset;
     vec2 texCoord = intPayload.texCoord;
-    diffuse = textureLod(textureSamplers[nonuniformEXT(txtId)], texCoord, 5).xyz;
-    //diffuse = proceduralTilingAndBlending(texCoord, textureSamplers[nonuniformEXT(txtId)], pcRay.blendingOffset);
+    diffuse = texture(textureSamplers[nonuniformEXT(txtId)], texCoord).xyz;
+    diffuse = proceduralTilingAndBlending(texCoord, textureSamplers[nonuniformEXT(txtId)], pcRay.blendingOffset);
   }
   vec3  specular    = vec3(0);
   float attenuation = 0.3;
 
+  // TODO: when shadowray casting is fixed for the displaced surface, uncomment this code and remove the 2 lines below it
+  /*
   // Tracing shadow ray only if the light is visible from the surface
   if(dot(worldNrm, L) > 0)
   {
@@ -104,7 +106,10 @@ void main()
       // Specular
       specular = computeSpecular(mat, gl_WorldRayDirectionEXT, L, worldNrm);
     }
-  }
+  }*/
+
+  attenuation = 1;
+  specular = computeSpecular(mat, gl_WorldRayDirectionEXT, L, worldNrm);
 
   prd.hitValue = vec3(lightIntensity * attenuation * (diffuse + specular));
 }
