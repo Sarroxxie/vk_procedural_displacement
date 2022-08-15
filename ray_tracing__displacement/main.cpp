@@ -190,9 +190,9 @@ int main(int argc, char** argv)
                        0,   0,   1, 0,
                        0,   MAX_DISPLACEMENT - 1,   0,   1};
   //helloVk.loadModel(nvh::findFile("media/scenes/Medieval_building.obj", defaultSearchPaths, true));
-  //helloVk.loadModel(nvh::findFile("media/scenes/drone_vulkan_rt.obj", defaultSearchPaths, true));
-  //helloVk.loadModel(nvh::findFile("media/scenes/plane.obj", defaultSearchPaths, true));
   helloVk.loadModel(nvh::findFile("media/scenes/debug_plane.obj", defaultSearchPaths, true));
+  //helloVk.loadModel(nvh::findFile("media/scenes/debug_plane.obj", defaultSearchPaths, true));
+  //helloVk.loadModel(nvh::findFile("media/scenes/debug_sphere.obj", defaultSearchPaths, true));
 
   // setting folder containing shaders
   helloVk.m_shaderSourcePathPrefix = NVPSystem::exePath() + PROJECT_RELDIRECTORY + "shaders/";
