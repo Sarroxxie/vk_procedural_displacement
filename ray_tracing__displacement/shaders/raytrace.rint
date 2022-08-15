@@ -106,15 +106,13 @@ void up(inout Texel texel) {
 // (1,0) -> (1,1)
 // (1,1) -> raise LoD level and repeat
 void next(inout Texel texel) {
-  // TODO: find suitable break condition -> this should only be a problem if "next()" is called on the bottom right texel (no matter the LoD)
-  //       -> this may not be a problem as the "next()" of the last texel will only be used for coordinate comparison and not for sampling
   while (true) {
     switch (2*(texel.coord.x % 2) + texel.coord.y % 2) {
 
     // texelCoord = (0,1)
     case 1:
       texel.coord.y--;
-      // TODO: in the paper there is "texelCoord++" but I think it has to be like this to fulfill purpose
+      // FUN FACT: change this to "texel.coord++;" to produce fancy fractals
       texel.coord.x++;
       return;
 
@@ -130,9 +128,90 @@ void next(inout Texel texel) {
     }
   }
 }
-/*
+
+// naive root function that always starts at the highest possible LoD -> 1x1 texture
+Texel root(Triangle triangle) {
+  Texel result;
+  result.coord = ivec2(0, 0);
+  int lod = 0;
+  while (textureSize(textureSamplers[nonuniformEXT(triangle.txtOffset)], lod).x != 1) {
+    lod++;
+  }
+  result.lod = lod;
+  return result;
+}
+
+// dot product between 2 affine forms of type (xC, xU, xV, xK)
+vec4 affineFormDot(vec4 a, vec4 b) {
+  vec4 result;
+  result.x = a.x * b.x;
+  result.y = a.y * b.x + a.x * b.y;
+  result.z = a.z * b.x + a.x * b.z;
+  result.w = abs(a.w * b.x) + abs(a.x * b.w) + (abs(a.y) + abs(a.z) + a.w) * (abs(b.y) + abs(b.z) + b.w);
+  return result;
+}
+
+// displacement texture layout for channels: (linear, min, max, 1) -> minmax.y is min, minmax.z is max
+Aabb box(Texel texel, Triangle triangle, mat3x3 pt, mat3x3 nt) {
+  // 1. calculate affine form [h] of height range from minmax
+  vec2 minmax = texelFetch(textureSamplers[nonuniformEXT(triangle.txtOffset)], texel.coord, texel.lod).yz * pcRay.displacementAmount;
+  vec4 affineHeight = 0.5 * vec4(minmax.x + minmax.y, 0, 0, minmax.y - minmax.x);
+
+  // 2. calculate affine form [uv] for the texel -> affine form layout: (xC, xU, xV, xK) -> see equation (12) of TFDM paper
+  // layout: (xC, xU, xV, xK)
+  ivec2 dimensions = textureSize(textureSamplers[nonuniformEXT(triangle.txtOffset)], 0);
+  vec4 u = pow(2, texel.lod) * vec4((texel.coord.x + 0.5) / dimensions.x, 1.0 / (2 * dimensions.x), 0, 0);
+  // layout: (xC, xU, xV, xK)
+  vec4 v = pow(2, texel.lod) * vec4((texel.coord.y + 0.5) / dimensions.y, 0, 1.0 / (2 * dimensions.y), 0);
+
+  // 3. calculate affine form [P] for position in 3D space
+  mat4x3 uv1 = mat4x3(u.x, v.x, 1,
+                      u.y, v.y, 0,
+                      u.z, v.z, 0,
+                      u.w, v.w, 0);
+  mat4x3 affinePos = pt * uv1;
+
+  // 4. calculate affine form [N] for normal in 3D space
+  mat4x3 affineNrm = nt * uv1;
+
+  // 5. calculate affine form [S] for displaced surface relative to given texel in 3D space -> [S] = [P] + [h] * [N]
+  vec4 row1 = affineFormDot(affineHeight, vec4(affineNrm[0][0], affineNrm[1][0], affineNrm[2][0], affineNrm[3][0]));
+  vec4 row2 = affineFormDot(affineHeight, vec4(affineNrm[0][1], affineNrm[1][1], affineNrm[2][1], affineNrm[3][1]));
+  vec4 row3 = affineFormDot(affineHeight, vec4(affineNrm[0][2], affineNrm[1][2], affineNrm[2][2], affineNrm[3][2]));
+  // the affine form [hn] = [h] * [N]
+  mat4x3 hn = mat4x3(row1.x, row2.x, row3.x,
+                     row1.y, row2.y, row3.y,
+                     row1.z, row2.z, row3.z,
+                     row1.w, row2.w, row3.w);
+  mat4x3 affineDisp = affinePos + hn;
+
+  // 6. calculate AABB from [S] according to equation (13) of TFDM paper
+  Aabb result;
+  // TODO: should maybe do this with vector operations in the future for better performance
+  result.minimum = vec3(affineDisp[0][0] - abs(affineDisp[1][0]) - abs(affineDisp[2][0]) - abs(affineDisp[3][0]),
+                        affineDisp[0][1] - abs(affineDisp[1][1]) - abs(affineDisp[2][1]) - abs(affineDisp[3][1]),
+                        affineDisp[0][2] - abs(affineDisp[1][2]) - abs(affineDisp[2][2]) - abs(affineDisp[3][2]));
+  result.maximum = vec3(affineDisp[0][0] + abs(affineDisp[1][0]) + abs(affineDisp[2][0]) + abs(affineDisp[3][0]),
+                        affineDisp[0][1] + abs(affineDisp[1][1]) + abs(affineDisp[2][1]) + abs(affineDisp[3][1]),
+                        affineDisp[0][2] + abs(affineDisp[1][2]) + abs(affineDisp[2][2]) + abs(affineDisp[3][2]));
+
+  return result;
+}
+
+bool miss(Ray ray, Aabb aabb) {
+  if (hitAabb(aabb, ray) > 0)
+    return false;
+  return true;
+}
+
+// TODO: implement "box-intersection" -> for the "miss" evaluation this is already calculated -> reuse result
+float local_intersection(Texel texel, Ray ray) {
+  return -1;
+}
+
+
 // these functions are used for D-BVH traversal
-float traversal(Ray ray, Triangle triangle, int targetLoD) {
+float traversal(Ray ray, Triangle triangle, int targetLoD, out vec2 outTexCoord, out vec3 outWorldNrm) {
   float tHit = -1;
   Texel texel, endtexel;
   // TODO: implement "root()" function
@@ -140,29 +219,46 @@ float traversal(Ray ray, Triangle triangle, int targetLoD) {
   endtexel = root(triangle);
   next(endtexel);
 
+  // TODO: this matrix calculation is constant for the triangle, should be done on CPU
+  mat3x3 tuvb = inverse(mat3x3(triangle.v0.texCoord, 1, triangle.v1.texCoord, 1, triangle.v2.texCoord, 1));
+  mat3x3 pt = mat3x3(triangle.v0.pos, triangle.v1.pos, triangle.v2.pos) * tuvb;
+  mat3x3 nt = mat3x3(triangle.v0.nrm, triangle.v1.nrm, triangle.v2.nrm) * tuvb;
+
   while (!texelEquals(texel, endtexel)) {
+    Aabb aabb = box(texel, triangle, pt, nt);
+    float hitAABB = hitAabb(aabb, ray);
     // implement "outside()", "miss()" and "box()" functions
-    if (outside(texel, triangle) || miss(ray, box(texel)) {
+    //if (outside(texel, triangle) || miss(ray, box(texel, pt, nt)) {
+    if (hitAABB < 0) {
       next(texel);
     } else if (texel.lod <= targetLoD) {
       // TODO: implement "local_intersection()" function
-      float hit = local_intersection(texel, ray);
-      if (hit >= 0)
+      //float hit = local_intersection(texel, ray);
+      float hit = hitAABB;
+      if (hit >= 0 && (tHit < 0 || hit < tHit)) {
         tHit = hit;
+        // calculate texture coordinates for the closest hit shader 
+        //   -> note: these are the texture coordinates for the middle of the texel (fixed for the AABB)
+        outTexCoord = vec2(texel.coord + 0.5) / textureSize(textureSamplers[nonuniformEXT(triangle.txtOffset)], texel.lod);
+      }
       next(texel);
     } else {
       down(texel);
     }
   }
+  // TODO: find a suitable normal calculation
+  outWorldNrm = vec3(0,1,0);
   return tHit;
-}*/
+}
 
 // perform raymarching to calculate intersection with the displaced surface
-float raymarching(Ray ray, Triangle t, out vec2 outTexCoord, out vec3 outWorldNrm) {
+float raymarching(Ray ray, Triangle t, Aabb aabb, out vec2 outTexCoord, out vec3 outWorldNrm) {
+  float tHitAABB = hitAabb(aabb, ray);
+
   // ray marching
   float tHit = -1;
   Ray march;
-  march.origin = ray.origin;
+  march.origin = ray.origin + ray.direction * tHitAABB;
   march.direction = ray.direction;
   // TODO: find more accurate interpolation here
   vec3 normal = normalize(t.v0.nrm + t.v1.nrm + t.v2.nrm);
@@ -193,7 +289,7 @@ float raymarching(Ray ray, Triangle t, out vec2 outTexCoord, out vec3 outWorldNr
       tHit = STEP_SIZE * i;
       
       // TODO: should this be evaluated in the closest hit shader? -> new method for normal calculation from height map
-      vec2 coordT, coordR, coordB, coordL;
+      /*vec2 coordT, coordR, coordB, coordL;
       coordT = texCoord + vec2(0,1) * 1/4096;  //s12
       coordR = texCoord + vec2(1,0) * 1/4096;  //s21
       coordB = texCoord + vec2(0,-1) * 1/4096; //s10
@@ -205,7 +301,7 @@ float raymarching(Ray ray, Triangle t, out vec2 outTexCoord, out vec3 outWorldNr
       left = proceduralTilingAndBlending(coordL, textureSamplers[nonuniformEXT(t.txtOffset)], pcRay.blendingOffset).x * pcRay.displacementAmount;
 
       vec3 va = normalize(vec3(2,0,right - left));
-      vec3 vb = normalize(vec3(0,2,bottom - top));
+      vec3 vb = normalize(vec3(0,2,bottom - top));*/
       
       
       // setting world normal for use in closest-hit shader
@@ -215,7 +311,8 @@ float raymarching(Ray ray, Triangle t, out vec2 outTexCoord, out vec3 outWorldNr
       break;
     }
   }
-  return tHit;
+  // if the raymarching hit something, tHit is greater than 0 and the tHitAABB should be added on top
+  return tHit > 0 ? tHit + tHitAABB : -1;
 }
 
 
@@ -254,8 +351,6 @@ void main()
   triangle.v2 = v2;
   triangle.txtOffset = mat.dispTextureID + dispObjDesc.i[gl_InstanceCustomIndexEXT].txtOffset;
 
-  float offset = pcRay.blendingOffset;
-
   // if a triangle is not displaced
   if (mat.dispTextureID < 0 || pcRay.displacementAmount <= 0)
   {
@@ -268,34 +363,12 @@ void main()
     return;
   }
 
-  float tHitAABB = hitAabb(aabb, ray);
+  // ray marching
+  //float newHit = raymarching(ray, triangle, aabb, intPayload.texCoord, intPayload.worldNrm);
 
-  Ray marchStart;
-  marchStart.origin = ray.origin + ray.direction * tHitAABB;
-  marchStart.direction = ray.direction;
-
-  // calculate intersection point
-  float newHit = raymarching(marchStart, triangle, intPayload.texCoord, intPayload.worldNrm);
+  // tessellation-free displacement mapping
+  float newHit = traversal(ray, triangle, 4, intPayload.texCoord, intPayload.worldNrm);
   
   if (newHit > 0)
-    reportIntersectionEXT(newHit + tHitAABB, KIND_TRIANGLE);
-
-  /*
-  // stencil for height
-  vec3 hit = hitTriangle(triangle, ray);
-  float tHit = hit.z;
-  vec2 texCoord = v0.texCoord * (1 - hit.x - hit.y) + v1.texCoord * hit.x + v2.texCoord * hit.y;
-
-  // sample displacement texture
-  float mipLevel = 0;
-  vec3 diffuse = textureLod(textureSampler, texCoord, mipLevel).xyz;
-  diffuse = proceduralTilingAndBlending(texCoord, textureSampler);
-
-  bool mask = diffuse.x < pcRay.displacementAmount;// && diffuse.y < 0.2 && diffuse.z < 0.2;
-  // Report hit point
-  intPayload.worldNrm = vec3(0,1,0);
-  intPayload.texCoord = texCoord;
-  if(tHit > 0 && mask)
-    reportIntersectionEXT(tHit, KIND_TRIANGLE);
-  */
+    reportIntersectionEXT(newHit, KIND_TRIANGLE);
 }
