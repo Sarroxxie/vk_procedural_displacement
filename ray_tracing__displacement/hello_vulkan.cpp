@@ -288,6 +288,9 @@ void HelloVulkan::loadDisplacementModel(ObjLoader loader, nvmath::mat4f transfor
   int               nbTriangles =  loader.m_indices.size() / 3;
   std::vector<Aabb> aabbs;
   aabbs.reserve(nbTriangles);
+  // this matrix converts from UV to barycentric coordinates per triangle (see equation (7) of TFDM paper)
+  std::vector<nvmath::mat3f> uvToBarycentrics;
+  uvToBarycentrics.reserve(nbTriangles);
 
   for(int i = 0; i < nbTriangles; i++)
   {
@@ -298,6 +301,20 @@ void HelloVulkan::loadDisplacementModel(ObjLoader loader, nvmath::mat4f transfor
     TriangleObj t{v0, v1, v2, 0};
     Aabb        aabb = createAabbFromTriangle(t);
     aabbs.emplace_back(aabb);
+
+    // perform inversion as double precision to avoid artifacts
+    nvmath::matrix3<double> uvToBarycentric;
+    uvToBarycentric.set_col(0, nvmath::vector3<double>(v0.texCoord.x, v0.texCoord.y, 1.f));
+    uvToBarycentric.set_col(1, nvmath::vector3<double>(v1.texCoord.x, v1.texCoord.y, 1.f));
+    uvToBarycentric.set_col(2, nvmath::vector3<double>(v2.texCoord.x, v2.texCoord.y, 1.f));
+    uvToBarycentric = nvmath::invert(uvToBarycentric);
+
+    nvmath::mat3f floatMatrix;
+    for(int j = 0; j < 9; j++)
+    {
+      floatMatrix.mat_array[j] = (float) uvToBarycentric.mat_array[j];
+    }
+    uvToBarycentrics.emplace_back(floatMatrix);
   }
 
   DispObjModel model;
@@ -320,11 +337,9 @@ void HelloVulkan::loadDisplacementModel(ObjLoader loader, nvmath::mat4f transfor
   model.aabbBuffer     = m_alloc.createBuffer(cmdBuf, aabbs,
                                               VK_BUFFER_USAGE_STORAGE_BUFFER_BIT
                                                   | VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR | flag);
+  model.uvToBarycentricsBuffer = m_alloc.createBuffer(cmdBuf, uvToBarycentrics, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | flag);
 
   // @author Josias
-  // TODO: find a way to only use one "createCommandBuffer()" and one "submitAndWait()" for the whole function
-  //       it might be necessary to store handles to the buffer and buffer memory used in "createMips()" to
-  //       destroy after the single "submitAndWait()" call
   // Creates all textures found and find the offset for this model
   auto txtOffset = static_cast<uint32_t>(m_textures.size());
 
@@ -364,6 +379,7 @@ void HelloVulkan::loadDisplacementModel(ObjLoader loader, nvmath::mat4f transfor
   m_debug.setObjectName(model.matColorBuffer.buffer, (std::string("mat_" + objNb)));
   m_debug.setObjectName(model.matIndexBuffer.buffer, (std::string("matIdx_" + objNb)));
   m_debug.setObjectName(model.aabbBuffer.buffer, (std::string("aabb_" + objNb)));
+  m_debug.setObjectName(model.uvToBarycentricsBuffer.buffer, (std::string("uvToB_" + objNb)));
 
   // Keeping transformation matrix of the instance
   ObjInstance instance;
@@ -379,6 +395,7 @@ void HelloVulkan::loadDisplacementModel(ObjLoader loader, nvmath::mat4f transfor
   desc.materialAddress      = nvvk::getBufferDeviceAddress(m_device, model.matColorBuffer.buffer);
   desc.materialIndexAddress = nvvk::getBufferDeviceAddress(m_device, model.matIndexBuffer.buffer);
   desc.aabbAddress          = nvvk::getBufferDeviceAddress(m_device, model.aabbBuffer.buffer);
+  desc.uvToBAddress         = nvvk::getBufferDeviceAddress(m_device, model.uvToBarycentricsBuffer.buffer);
 
   // Keeping the obj host model and device description
   m_dispObjModel.emplace_back(model);
@@ -542,6 +559,7 @@ void HelloVulkan::destroyResources()
     m_alloc.destroy(m.matColorBuffer);
     m_alloc.destroy(m.matIndexBuffer);
     m_alloc.destroy(m.aabbBuffer);
+    m_alloc.destroy(m.uvToBarycentricsBuffer);
   }
   // \@author Josias
 
@@ -1472,10 +1490,88 @@ void HelloVulkan::createSingleMip(stbi_uc* input, stbi_uc* output, int inputSize
     stbi_uc max = std::max(std::max(*(topLeft + 2), *(topRight + 2)), std::max(*(bottomLeft + 2), *(bottomRight + 2)));
 
     // for final texture layout, see notes -> (linear, min, max, 255u)
-    *(output + (mipRow * mipSize + mipCol) * texChannels)  = linear;
+    *(output + (mipRow * mipSize + mipCol) * texChannels)     = linear;
     *(output + (mipRow * mipSize + mipCol) * texChannels + 1) = min;
     *(output + (mipRow * mipSize + mipCol) * texChannels + 2) = max;
     *(output + (mipRow * mipSize + mipCol) * texChannels + 3) = 255u;
+  }
+  
+  // TODO: the bias is not added to the highest LOD level, would only produce problems for a constant displacement map
+  //         -> maybe implement an edge case here
+  // there is no accounting for sampling needed, if it can only sample one value
+  if(mipSize == 1)
+    return;
+  
+  // TODO: work in progress to account for sampling (equation (4) of TFDM paper)
+  for(int i = 0; i < mipSize * mipSize; i++)
+  {
+    int mipRow = i / mipSize;
+    int mipCol = i % mipSize;
+
+    stbi_uc* texel = (output + (mipRow * mipSize + mipCol) * texChannels);
+
+    // Sets the row and column values for texel fetching. If the texel is at the border of the texture, the rows and cols are
+    // set in a way that no texels outside of the texture get fetched.
+    // Border texels could be evaluated using less comparisons but for streamlining purposes they are integrated into the normal
+    // evaluation flow.
+
+    // clang-format off
+    int topRow   = mipRow != 0           ? mipRow - 1 : mipRow;
+    int botRow   = mipRow != mipSize - 1 ? mipRow + 1 : mipRow;
+    int leftCol  = mipCol != 0           ? mipCol - 1 : mipCol;
+    int rightCol = mipCol != mipSize - 1 ? mipCol + 1 : mipCol;
+    // clang-format on
+
+    // these are all the values that are written in the linear interpolation channel of the mipmap
+    stbi_uc topLeft  = *(output + (topRow * mipSize + leftCol) * texChannels);
+    stbi_uc topMid   = *(output + (topRow * mipSize + mipCol) * texChannels);
+    stbi_uc topRight = *(output + (topRow * mipSize + rightCol) * texChannels);
+
+    stbi_uc midLeft  = *(output + (mipRow * mipSize + leftCol) * texChannels);
+    stbi_uc midMid   = *texel;
+    stbi_uc midRight = *(output + (mipRow * mipSize + rightCol) * texChannels);
+
+    stbi_uc botLeft  = *(output + (botRow * mipSize + leftCol) * texChannels);
+    stbi_uc botMid   = *(output + (botRow * mipSize + mipCol) * texChannels);
+    stbi_uc botRight = *(output + (botRow * mipSize + rightCol) * texChannels);
+
+    // fetching current "naive" minimum and maximum
+    stbi_uc* min = texel + 1;
+    stbi_uc* max = texel + 2;
+
+    // no overflow is happening because the "+" operator automatically converts its operands into int32
+    // corner points
+    stbi_uc temp = (stbi_uc)(0.25 * (topLeft + topMid + midLeft + midMid));
+    minmax(min, max, temp);
+    temp = (stbi_uc)(0.25 * (topMid + topRight + midMid + midRight));
+    minmax(min, max, temp);
+    temp = (stbi_uc)(0.25 * (midLeft + midMid + botLeft + botMid));
+    minmax(min, max, temp);
+    temp = (stbi_uc)(0.25 * (midMid + midRight + botMid + botRight));
+    minmax(min, max, temp);
+
+    // edge points
+    temp = (stbi_uc)(0.5 * (midMid + topMid));
+    minmax(min, max, temp);
+    temp = (stbi_uc)(0.5 * (midMid + midRight));
+    minmax(min, max, temp);
+    temp = (stbi_uc)(0.5 * (midMid + botMid));
+    minmax(min, max, temp);
+    temp = (stbi_uc)(0.5 * (midMid + midLeft));
+    minmax(min, max, temp);
+
+    // add smallest possible bias if the minmax range is 0 (intersection tests have to be done on an AABB in the shader)
+    if((*min) == (* max))
+    {
+      if((*min) == 0)
+      {
+        (*max)++;
+      }
+      else
+      {
+        (*min)--;
+      }
+    }
   }
 }
 
@@ -1614,4 +1710,11 @@ void HelloVulkan::copyBufferToImage(VkCommandBuffer cmdBuf, VkBuffer buffer, VkI
     offset += static_cast<uint64_t>(mipSize) * mipSize * 4;
     mipSize /= 2;
   }
+}
+
+// stores the minimum of *min and value inside of *min and analogous for maximum with *max and value
+// used for better code readability inside "createSingleMip()"
+void HelloVulkan::minmax(stbi_uc* min, stbi_uc* max, stbi_uc value) {
+  *min = std::min(*min, value);
+  *max = std::max(*max, value);
 }

@@ -87,11 +87,12 @@ public:
   {
     uint32_t     nbIndices{0};
     uint32_t     nbVertices{0};
-    nvvk::Buffer vertexBuffer;    // Device buffer of all 'Vertex'
-    nvvk::Buffer indexBuffer;     // Device buffer of the indices forming triangles
-    nvvk::Buffer matColorBuffer;  // Device buffer of array of 'Wavefront material'
-    nvvk::Buffer matIndexBuffer;  // Device buffer of array of 'Wavefront material'
-    nvvk::Buffer aabbBuffer;      // Device buffer of the AABBs for the triangles
+    nvvk::Buffer vertexBuffer;            // Device buffer of all 'Vertex'
+    nvvk::Buffer indexBuffer;             // Device buffer of the indices forming triangles
+    nvvk::Buffer matColorBuffer;          // Device buffer of array of 'Wavefront material'
+    nvvk::Buffer matIndexBuffer;          // Device buffer of array of 'Wavefront material'
+    nvvk::Buffer aabbBuffer;              // Device buffer of the AABBs for the triangles
+    nvvk::Buffer uvToBarycentricsBuffer;  // Device buffer of the 3x3 matrices that compute UV to barycentrics per triangle
   };
 
   // \@author Josias
@@ -185,6 +186,7 @@ public:
       0,                     // light type
       1.f,                   // displacement amount (@author Josias)};
       0.f,                   // blending offset
+      0,                     // raymarching
   };
 
   // @author Josias
@@ -226,6 +228,8 @@ private:
   uint32_t findMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags properties);
   void     transitionImageLayout(VkCommandBuffer cmdBuf, VkImage image, VkFormat format, VkImageLayout oldLayout, VkImageLayout newLayout, int miplevels);
   void     copyBufferToImage(VkCommandBuffer cmdBuf, VkBuffer buffer, VkImage image, uint32_t width, uint32_t height);
+
+  void minmax(stbi_uc* min, stbi_uc* max, stbi_uc value);
 
   // used to store reference to buffers used for mip map generation so they can get destroyed when an object is fully loaded
   std::vector<VkBuffer> m_stagingBuffers;
