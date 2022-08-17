@@ -27,6 +27,7 @@
 using vec2 = nvmath::vec2f;
 using vec3 = nvmath::vec3f;
 using vec4 = nvmath::vec4f;
+using mat3 = nvmath::mat3f;
 using mat4 = nvmath::mat4f;
 using uint = unsigned int;
 #endif
@@ -72,6 +73,7 @@ struct DispObjDesc
   uint64_t materialAddress;       // Address of the material buffer
   uint64_t materialIndexAddress;  // Address of the triangle material index buffer
   uint64_t aabbAddress;           // Address of the AABB buffer
+  uint64_t uvToBAddress;          // Address of the UV to Barycentrics buffer
 };
 // \@author Josias
 
@@ -105,6 +107,8 @@ struct PushConstantRay
   // @author Josias
   float displacementAmount;
   float blendingOffset;
+  int   raymarching;
+  int   targetLod;
   // \@author Josias
 };
 
@@ -130,14 +134,6 @@ struct WaveFrontMaterial  // See ObjLoader, copy of MaterialObj, could be compre
   int   diffTextureID;
   int   dispTextureID;
 };
-
-/*
-struct Sphere
-{
-  vec3 center;
-  float radius;
-};
-*/
 
 struct Aabb
 {

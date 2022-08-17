@@ -64,6 +64,9 @@ void renderUI(HelloVulkan& helloVk)
   // @author Josias
   ImGui::SliderFloat("Displacement Amount", &helloVk.m_pcRay.displacementAmount, 0.f, MAX_DISPLACEMENT);
   ImGui::SliderFloat("Blending Offset", &helloVk.m_pcRay.blendingOffset, 0.f, MAX_OFFSET);
+  // TODO: these bounds are only defined for 4k textures, have to be made flexible for better use
+  ImGui::SliderInt("Target LOD", &helloVk.m_pcRay.targetLod, 1, 12);
+  ImGui::Checkbox("Ray Marching", (bool*)&helloVk.m_pcRay.raymarching);
   if(ImGui::Button("Reload Shaders"))
   {
     reloadShaders = true;
@@ -190,9 +193,9 @@ int main(int argc, char** argv)
                        0,   0,   1, 0,
                        0,   MAX_DISPLACEMENT - 1,   0,   1};
   //helloVk.loadModel(nvh::findFile("media/scenes/Medieval_building.obj", defaultSearchPaths, true));
-  //helloVk.loadModel(nvh::findFile("media/scenes/drone_vulkan_rt.obj", defaultSearchPaths, true));
-  //helloVk.loadModel(nvh::findFile("media/scenes/plane.obj", defaultSearchPaths, true));
   helloVk.loadModel(nvh::findFile("media/scenes/debug_plane.obj", defaultSearchPaths, true));
+  //helloVk.loadModel(nvh::findFile("media/scenes/debug_plane2.obj", defaultSearchPaths, true));
+  //helloVk.loadModel(nvh::findFile("media/scenes/debug_sphere.obj", defaultSearchPaths, true));
 
   // setting folder containing shaders
   helloVk.m_shaderSourcePathPrefix = NVPSystem::exePath() + PROJECT_RELDIRECTORY + "shaders/";
@@ -222,7 +225,6 @@ int main(int argc, char** argv)
   helloVk.updatePostDescriptorSet();
 
   nvmath::vec4f clearColor   = nvmath::vec4f(1.f, 1.f, 1.f, 2.f);
-
 
   helloVk.setupGlfwCallbacks(window);
   ImGui_ImplGlfw_InitForVulkan(window, true);
