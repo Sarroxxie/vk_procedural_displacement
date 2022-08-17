@@ -107,7 +107,8 @@ struct PushConstantRay
   // @author Josias
   float displacementAmount;
   float blendingOffset;
-  int  raymarching;
+  int   raymarching;
+  int   targetLod;
   // \@author Josias
 };
 

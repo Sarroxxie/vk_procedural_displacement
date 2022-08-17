@@ -64,6 +64,8 @@ void renderUI(HelloVulkan& helloVk)
   // @author Josias
   ImGui::SliderFloat("Displacement Amount", &helloVk.m_pcRay.displacementAmount, 0.f, MAX_DISPLACEMENT);
   ImGui::SliderFloat("Blending Offset", &helloVk.m_pcRay.blendingOffset, 0.f, MAX_OFFSET);
+  // TODO: these bounds are only defined for 4k textures, have to be made flexible for better use
+  ImGui::SliderInt("Target LOD", &helloVk.m_pcRay.targetLod, 1, 12);
   ImGui::Checkbox("Ray Marching", (bool*)&helloVk.m_pcRay.raymarching);
   if(ImGui::Button("Reload Shaders"))
   {

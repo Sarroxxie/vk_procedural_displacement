@@ -66,7 +66,8 @@ void main()
     // TODO: grabbing mat.dispTextureID for debugging purposes (needs mat.diffTextureID later)
     uint txtId = mat.dispTextureID + dispObjDesc.i[gl_InstanceCustomIndexEXT].txtOffset;
     vec2 texCoord = intPayload.texCoord;
-    diffuse = texture(textureSamplers[nonuniformEXT(txtId - 1)], texCoord).rgb;
+    //diffuse = texture(textureSamplers[nonuniformEXT(txtId - 1)], texCoord).rgb;
+    diffuse = textureLod(textureSamplers[nonuniformEXT(txtId)], texCoord, pcRay.targetLod).rrr;
     //diffuse = texelFetch(textureSamplers[nonuniformEXT(txtId)], ivec2(0,0), 12).rrr;
     //diffuse = proceduralTilingAndBlending(texCoord, textureSamplers[nonuniformEXT(txtId)], pcRay.blendingOffset);
     //diffuse = vec3(1,0,0);

@@ -222,10 +222,9 @@ Aabb box(Texel texel, mat3x3 pt, mat3x3 nt, out bool clip) {
   return result;
 }
 
-bool miss(Ray ray, Aabb aabb) {
-  if (hitAabb(aabb, ray) > 0)
-    return false;
-  return true;
+// TODO: implement Triangle-square 2D collision here (see Algorithm 4 of TFDM paper) -> some data can be precalculated at start of shader
+int outside(Texel texel) {
+  return 0;
 }
 
 // TODO: implement "box-intersection" -> for the "miss" evaluation this is already calculated -> reuse result
@@ -249,6 +248,7 @@ float traversal(int targetLoD) {
   mat3x3 nt = mat3x3(triangle.v0.nrm, triangle.v1.nrm, triangle.v2.nrm) * uvToB;
 
   while (!texelEquals(texel, endtexel)) {
+    // TODO: test for "outside()" before doing the intersection test with the AABB
     Aabb aabb = box(texel, pt, nt, clip);
     // if the AABB should be clipped, not intersection test is performed
     float hitAABB = -1;
@@ -388,7 +388,7 @@ void main()
   }
 
   float newHit = -1;
-  if (pcRay.raymarching) {
+  if (pcRay.raymarching == 1) {
     // fetch AABB
     Aabb aabb = Aabbs(objResource.aabbAddress).b[gl_PrimitiveID];
 
@@ -397,7 +397,7 @@ void main()
     // fetch UV to barycentrics matrix
     uvToB = UVtoBs(objResource.uvToBAddress).m[gl_PrimitiveID];
 
-    newHit = traversal(1);
+    newHit = traversal(pcRay.targetLod);
   }
   
   if (newHit > 0)

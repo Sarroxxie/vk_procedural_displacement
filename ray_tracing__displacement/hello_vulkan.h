@@ -187,6 +187,7 @@ public:
       1.f,                   // displacement amount (@author Josias)};
       0.f,                   // blending offset
       0,                     // raymarching
+      1,                     // target LOD
   };
 
   // @author Josias
