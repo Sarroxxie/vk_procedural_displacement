@@ -39,9 +39,13 @@ Triangle triangle;
 // UV to barycentric coordinates
 mat3 uvToB;
 
+// outward pointing normals in UV space like in Algorithm 4 in TFDM paper
+vec2 n0, n1, n2;
+
 // Ray-AABB intersection
 float hitAabb(const Aabb aabb, const Ray r)
 {
+  // TODO: can precompute the inverse direction for multiple boxes!
   vec3  invDir = 1.0 / r.direction;
   vec3  tbot   = invDir * (aabb.minimum - r.origin);
   vec3  ttop   = invDir * (aabb.maximum - r.origin);
@@ -158,7 +162,7 @@ vec4 affineFormDot(vec4 a, vec4 b) {
 }
 
 // displacement texture layout for channels: (linear, min, max, 1) -> minmax.y is min, minmax.z is max
-Aabb box(Texel texel, mat3x3 pt, mat3x3 nt, out bool clip) {
+Aabb box(Texel texel, mat3x3 pt, mat3x3 nt) {
   // 1. calculate affine form [h] of height range from minmax
   vec2 minmax = texelFetch(textureSamplers[nonuniformEXT(triangle.txtOffset)], texel.coord, texel.lod).yz * pcRay.displacementAmount;
   vec4 affineHeight = 0.5 * vec4(minmax.x + minmax.y, 0, 0, minmax.y - minmax.x);
@@ -175,23 +179,6 @@ Aabb box(Texel texel, mat3x3 pt, mat3x3 nt, out bool clip) {
                       u.y, v.y, 0,
                       u.z, v.z, 0,
                       u.w, v.w, 0);
-
-  // TODO: this should be the first thing to get checked -> discard the test if barycentrics are outside of triangle
-  int outsideTriangleCounter = 0;
-  mat4x3 barycentrics = uvToB * uv1;
-  for (int i = 0; i < 3; i++) {
-    float minimum = barycentrics[0][i] - abs(barycentrics[1][i]) - abs(barycentrics[2][i]) - abs(barycentrics[3][i]);
-    float maximum = barycentrics[0][i] + abs(barycentrics[1][i]) + abs(barycentrics[2][i]) + abs(barycentrics[3][i]);
-    if (minimum < 0 && maximum < 0)
-      outsideTriangleCounter++;
-  }
-  if (outsideTriangleCounter == 3) {
-    clip = true;
-  } else {
-    clip = false;
-  }
-
-  //clip = false;
 
   mat4x3 affinePos = pt * uv1;
 
@@ -222,9 +209,34 @@ Aabb box(Texel texel, mat3x3 pt, mat3x3 nt, out bool clip) {
   return result;
 }
 
-// TODO: implement Triangle-square 2D collision here (see Algorithm 4 of TFDM paper) -> some data can be precalculated at start of shader
-int outside(Texel texel) {
-  return 0;
+// Triangle-square 2D collision here (see Algorithm 4 of TFDM paper)
+bool outside(Texel texel) {
+  int texSize = textureSize(textureSamplers[nonuniformEXT(triangle.txtOffset)], texel.lod).x;
+  vec2 c = vec2(texel.coord + 0.5) / texSize;
+  float w = 1.0 / texSize;
+
+  vec2 p0 = triangle.v0.texCoord - c;
+  vec2 p1 = triangle.v1.texCoord - c;
+  vec2 p2 = triangle.v2.texCoord - c;
+
+  vec2 minimum = min(vec2(w, w), max(p0, max(p1, p2)));
+  vec2 maximum = max(vec2(-w, -w), min(p0, min(p1, p2)));
+
+  if (minimum.x <= maximum.x || minimum.y <= maximum.y) {
+    return true;
+  }
+  vec2 sign0 = vec2(n0.x / abs(n0.x), n0.y / abs(n0.y));
+  vec2 sign1 = vec2(n1.x / abs(n1.x), n1.y / abs(n1.y));
+  vec2 sign2 = vec2(n2.x / abs(n2.x), n2.y / abs(n2.y));
+  
+  float dot0 = dot(n0, p0 + sign0 * w);
+  float dot1 = dot(n1, p1 + sign1 * w);
+  float dot2 = dot(n2, p2 + sign2 * w);
+  if (dot0 <= 0 || dot1 <= 0 || dot2 <= 0) {
+    return true;
+  }
+
+  return false;
 }
 
 // TODO: implement "box-intersection" -> for the "miss" evaluation this is already calculated -> reuse result
@@ -232,8 +244,6 @@ float local_intersection(Texel texel, Ray ray) {
   return -1;
 }
 
-// TODO: this traversal traverses the whole texture that it can fit into the AABB of the triangle, but should only do it where the triangle
-//       actually is! -> discard (= return an invalid intersection) using the calculated barycentric coordinates!
 // these functions are used for D-BVH traversal
 float traversal(int targetLoD) {
   float tHit = -1;
@@ -241,33 +251,32 @@ float traversal(int targetLoD) {
   texel = root(triangle);
   endtexel = root(triangle);
   next(endtexel);
-  bool clip = false;
 
   // UV to Barycentrics matrix is calculated on CPU (uvToB)
   mat3x3 pt = mat3x3(triangle.v0.pos, triangle.v1.pos, triangle.v2.pos) * uvToB;
   mat3x3 nt = mat3x3(triangle.v0.nrm, triangle.v1.nrm, triangle.v2.nrm) * uvToB;
 
   while (!texelEquals(texel, endtexel)) {
-    // TODO: test for "outside()" before doing the intersection test with the AABB
-    Aabb aabb = box(texel, pt, nt, clip);
+    if (outside(texel)) {
+      next(texel);
+      continue;
+    }
+    Aabb aabb = box(texel, pt, nt);
     // if the AABB should be clipped, not intersection test is performed
-    float hitAABB = -1;
-    if (!clip)
-      hitAABB = hitAabb(aabb, ray);
-    // implement "outside()", "miss()" and "box()" functions
+    float hitAABB = hitAabb(aabb, ray);
     //if (outside(texel, triangle) || miss(ray, box(texel, pt, nt)) {
-    if (hitAABB < 0) {
+    if (!(hitAABB < -1.0 || hitAABB > -1.0)) {
       next(texel);
     } else if (texel.lod <= targetLoD) {
       // TODO: implement "local_intersection()" function
       //float hit = local_intersection(texel, ray);
       float hit = hitAABB;
-      if (hit >= 0 && (tHit < 0 || hit < tHit)) {
-        tHit = hit;
-        // calculate texture coordinates for the closest hit shader 
-        //   -> note: these are the texture coordinates for the middle of the texel (fixed for the AABB)
-        intPayload.texCoord = vec2(texel.coord + 0.5) / textureSize(textureSamplers[nonuniformEXT(triangle.txtOffset)], texel.lod);
-      }
+    if (hit >= 0 && (tHit < 0 || hit < tHit)) {
+      tHit = hit;
+      // calculate texture coordinates for the closest hit shader 
+      //   -> note: these are the texture coordinates for the middle of the texel (fixed for the AABB)
+      intPayload.texCoord = vec2(texel.coord + 0.5) / textureSize(textureSamplers[nonuniformEXT(triangle.txtOffset)], texel.lod);
+    }
       next(texel);
     } else {
       down(texel);
@@ -311,7 +320,6 @@ float raymarching(Aabb aabb) {
     float height = proceduralTilingAndBlending(texCoord, textureSamplers[nonuniformEXT(triangle.txtOffset)], pcRay.blendingOffset).x;
     height = clamp(height, 0, 1) * pcRay.displacementAmount;
 
-    // TODO: ray marching should stop if exiting the bounding box
     // TODO: ray marching only works for triangles parallel to the ground plane for now
     if (march.origin.y < height + triangle.v0.pos.y){
       tHit = STEP_SIZE * i;
@@ -396,6 +404,22 @@ void main()
   } else {
     // fetch UV to barycentrics matrix
     uvToB = UVtoBs(objResource.uvToBAddress).m[gl_PrimitiveID];
+
+    // TODO: signum is 0, if all vertices are within one line, needs adjustment for degenerated triangles
+    // compute outward facing normals in UV space for use in Triangle-square 2D collision
+    // signum is 1, if vertices are clockwise, -1 else
+    float signum = sign(determinant(mat3(v0.texCoord.x, v1.texCoord.x, v2.texCoord.x,
+                                          v0.texCoord.y, v1.texCoord.y, v2.texCoord.y,
+                                          1,             1,             1)));
+    // TODO: find out if normalization is even necessary
+    n0 = signum * normalize(v1.texCoord - v0.texCoord);
+    n1 = signum * normalize(v2.texCoord - v1.texCoord);
+    n2 = signum * normalize(v0.texCoord - v2.texCoord);
+
+    // 90° clockwise rotation
+    n0 = vec2(n0.y, -n0.x);
+    n1 = vec2(n1.y, -n1.x);
+    n2 = vec2(n2.y, -n2.x);
 
     newHit = traversal(pcRay.targetLod);
   }
