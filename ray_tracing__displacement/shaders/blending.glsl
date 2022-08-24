@@ -4,11 +4,23 @@ vec2 hash(vec2 vertex) {
   return fract(sin((vertex) * mat2(127.1, 311.7, 269.5, 183.3)) * 43758.5453);
 }
 
+vec2 uvToLattice(vec2 uv, float offset) {
+  float triangleSize = 0.25;
+  float pi = 3.1415926;
+  mat2 latticeToWorld = mat2(triangleSize * cos(pi / 3), triangleSize, triangleSize * sin(pi / 3), 0);
+  mat2 worldToLattice = inverse(latticeToWorld);
+
+  vec2 pos = offset + (uv - 0.5); // could add a "*scale" here for scaling
+  vec2 latticeCoord = worldToLattice * pos;
+  return latticeCoord;
+}
+
 vec3 proceduralTilingAndBlending(vec2 uv, sampler2D inputTexture, float offset) {
   // this is probably calculated by the compiler in advance, not 100% sure though
   float triangleSize = 0.25;
   float pi = 3.1415926;
   mat2 latticeToWorld = mat2(triangleSize * cos(pi / 3), triangleSize, triangleSize * sin(pi / 3), 0);
+  //mat2 latticeToWorld = mat2(triangleSize * sin(pi / 3), 0, triangleSize * cos(pi / 3), triangleSize);
   mat2 worldToLattice = inverse(latticeToWorld);
 
   float w1, w2, w3;
@@ -48,6 +60,8 @@ vec3 proceduralTilingAndBlending(vec2 uv, sampler2D inputTexture, float offset) 
   G = G - vec3(0.5);
   G = G * inversesqrt(w1 * w1 + w2 * w2 + w3 * w3);
   G = G + vec3(0.5);
+
+  //return vec3(hash(vertex1).x, hash(vertex2).x, hash(vertex3).x);
   
   return G;
 }

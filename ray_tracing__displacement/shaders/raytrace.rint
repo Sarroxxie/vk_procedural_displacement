@@ -271,12 +271,13 @@ float traversal(int targetLoD) {
       // TODO: implement "local_intersection()" function
       //float hit = local_intersection(texel, ray);
       float hit = hitAABB;
-    if (hit >= 0 && (tHit < 0 || hit < tHit)) {
-      tHit = hit;
-      // calculate texture coordinates for the closest hit shader 
-      //   -> note: these are the texture coordinates for the middle of the texel (fixed for the AABB)
-      intPayload.texCoord = vec2(texel.coord + 0.5) / textureSize(textureSamplers[nonuniformEXT(triangle.txtOffset)], texel.lod);
-    }
+      if (hit >= 0 && (tHit < 0 || hit < tHit)) {
+      // update intersection to the new intersection
+        tHit = hit;
+        // calculate texture coordinates for the closest hit shader 
+        //   -> note: these are the texture coordinates for the middle of the texel (fixed for the AABB)
+        intPayload.texCoord = vec2(texel.coord + 0.5) / textureSize(textureSamplers[nonuniformEXT(triangle.txtOffset)], texel.lod);
+      }
       next(texel);
     } else {
       down(texel);
@@ -401,7 +402,7 @@ void main()
     Aabb aabb = Aabbs(objResource.aabbAddress).b[gl_PrimitiveID];
 
     newHit = raymarching(aabb);
-  } else {
+  } else if (pcRay.raymarching == 0) {
     // fetch UV to barycentrics matrix
     uvToB = UVtoBs(objResource.uvToBAddress).m[gl_PrimitiveID];
 
@@ -422,6 +423,28 @@ void main()
     n2 = vec2(n2.y, -n2.x);
 
     newHit = traversal(pcRay.targetLod);
+  } else {
+    // procedural TFDM
+
+    // calculate lattice coords for vertices
+    vec2 l0 = uvToLattice(v0.texCoord, pcRay.blendingOffset);
+    vec2 l1 = uvToLattice(v1.texCoord, pcRay.blendingOffset);
+    vec2 l2 = uvToLattice(v2.texCoord, pcRay.blendingOffset);
+
+    vec2 lMin = min(l0, min(l1, l2));
+    vec2 lMax = max(l0, max(l1, l2));
+
+    ivec2 lAlignedMin  = ivec2(floor(lMin));
+    ivec2 lAlignedMax  = ivec2(ceil(lMax));
+    int range = max(lAlignedMax.x - lAlignedMin.x, lAlignedMax.y - lAlignedMin.y);
+    int power = 1;
+    while(power < range)
+      power *= 2;
+    ivec2 lPowerOf2Max = lAlignedMax + power;
+
+    while (range != 1) {
+      //TODO: traverse lattice here -> in every iteration go "down" -> from 1 big cell to 4 smaller cells
+    }
   }
   
   if (newHit > 0)
