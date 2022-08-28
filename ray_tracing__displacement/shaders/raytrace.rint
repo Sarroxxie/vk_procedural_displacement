@@ -352,6 +352,101 @@ float raymarching(Aabb aabb) {
   return tHit > 0 ? tHit + tHitAABB : -1;
 }
 
+struct LatticeTexel
+{
+  ivec2 lMin;
+  // range always has to be power of 2!
+  int range;
+  // 0: botLeft
+  // 1: topLeft
+  // 2: botRight
+  // 3: topRight
+  int counter;
+};
+
+bool latticeTexelEquals(LatticeTexel t1, LatticeTexel t2) {
+  if (t1.lMin == t2.lMin && t1.range == t2.range && t1.counter == t2.counter)
+    return true;
+  return false;
+}
+
+void latticeDown(inout LatticeTexel lTexel) {
+  // TODO: remove this debug code later (the "if"-statement) -> produces invalid LatticeTexels for debugging
+  if (lTexel.range == 1) {
+    lTexel.range = 0;
+	return;
+  }
+  lTexel.range /= 2;
+  lTexel.counter = 0;
+}
+
+// will only be called if lTexel.counter = 3 -> texel is at topRight
+void latticeUp(inout LatticeTexel lTexel) {
+  lTexel.lMin.x -= lTexel.range;
+  lTexel.lMin.y -= lTexel.range;
+  lTexel.range *= 2;
+}
+
+void latticeNext(inout LatticeTexel lTexel) {
+  while (true) {
+    switch(lTexel.counter) {
+	// texelCoord = (0,1)
+    case 1:
+      lTexel.lMin += ivec2(lTexel.range, -lTexel.range);
+	  lTexel.counter++;
+      return;
+
+    // texelCoord = (1,1)
+    case 3:
+      latticeUp(lTexel);
+      continue;
+
+    // texelCoord = (0,0) or (1,0)
+    default:
+      lTexel.Min.y += lTexel.range;
+	  lTexel.counter++;
+      return;
+	}
+  }
+}
+// TODO: should act similar as the "box" function but for lattice-space -> need to adjust for this purpose
+Aabb latticeBox(LatticeTexel lTexel) {
+  // TODO: height of the box should range from the global min of the texture to the global max (-> blended values here)
+}
+
+// TODO: should act similar as the "outside" function but for lattice-space -> need to adjust for this purpose
+bool latticeOutside(LatticeTexel lTexel) {
+
+}
+// TODO: should determine somewhere inside, which lattice-triangle is hit and then call the 2nd hierarchy from there
+//         -> if 2nd hierarchy hit is negative, continue with the 1st hierarchy again (lattice-triangle)
+void latticeTraversal(LatticeTexel root) {
+  float tHit = -1;
+  LatticeTexel lTexel, endTexel;
+  lTexel = root;
+  endtexel = root;
+  latticeNext(endtexel);
+  
+  while (!latticeTexelEquals(lTexel, endTexel)) {
+    if(latticeOutside(lTexel) {
+	  latticeNext(lTexel);
+	  continue;
+	}
+	Aabb aabb = latticeBox(texel);
+	float hitAABB = hitAabb(aabb, ray);
+	if (!(hitAABB < -1.0 || hitAABB > -1.0)) {
+	  latticeNext(lTexel);
+	 // if smallest lattice texel is reached
+	} else if (lTexel.range == 1) {
+	  // TODO: write debug code to report the intersection here -> can get visual feedback
+	  // TODO: perform hit against triangle-prism of lattice
+	  // TODO: traverse 2nd hierarchy (-> triforce traversal)
+	} else {
+	  latticeDown(lTexel);
+	}
+  }
+}
+
 
 void main()
 {
@@ -427,9 +522,25 @@ void main()
     // procedural TFDM
 
     // calculate lattice coords for vertices
+	// TODO: store these for all the shader -> allocate outside main
     vec2 l0 = uvToLattice(v0.texCoord, pcRay.blendingOffset);
     vec2 l1 = uvToLattice(v1.texCoord, pcRay.blendingOffset);
     vec2 l2 = uvToLattice(v2.texCoord, pcRay.blendingOffset);
+	
+	// precalculate outward facing normals of triangle in lattice space for Triangle-square 2D collision
+	//   -> reusing n0, n1, n2
+	float signum = sign(determinant(mat3(l0.x, l1.x, l2.x,
+                                         l0.y, l1.y, l2.y,
+                                         1,    1,    1)));
+
+    n0 = signum * normalize(l1 - l0);
+    n1 = signum * normalize(l2 - l1);
+    n2 = signum * normalize(l0 - l2);
+	
+	// 90° clockwise rotation
+    n0 = vec2(n0.y, -n0.x);
+    n1 = vec2(n1.y, -n1.x);
+    n2 = vec2(n2.y, -n2.x);
 
     vec2 lMin = min(l0, min(l1, l2));
     vec2 lMax = max(l0, max(l1, l2));
@@ -440,11 +551,12 @@ void main()
     int power = 1;
     while(power < range)
       power *= 2;
-    ivec2 lPowerOf2Max = lAlignedMax + power;
+	
+	LatticeTexel root;
+	root.lMin = lAlignedMin;
+	root.range = power;
+	root.counter = 0;
 
-    while (range != 1) {
-      //TODO: traverse lattice here -> in every iteration go "down" -> from 1 big cell to 4 smaller cells
-    }
   }
   
   if (newHit > 0)
