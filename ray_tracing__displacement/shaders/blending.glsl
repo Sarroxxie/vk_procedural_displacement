@@ -1,3 +1,9 @@
+// constants
+float triangleSize = 0.25;
+float pi = 3.1415926;
+mat2 latticeToWorld = mat2(triangleSize * cos(pi / 3), triangleSize, triangleSize * sin(pi / 3), 0);
+mat2 worldToLattice = inverse(latticeToWorld);
+
 // Associates a random offset with vertex of triangle grid
 // see "Procedural Textures by Tiling and Blending" Listing 1.3
 vec2 hash(vec2 vertex) {
@@ -5,24 +11,12 @@ vec2 hash(vec2 vertex) {
 }
 
 vec2 uvToLattice(vec2 uv, float offset) {
-  float triangleSize = 0.25;
-  float pi = 3.1415926;
-  mat2 latticeToWorld = mat2(triangleSize * cos(pi / 3), triangleSize, triangleSize * sin(pi / 3), 0);
-  mat2 worldToLattice = inverse(latticeToWorld);
-
   vec2 pos = offset + (uv - 0.5); // could add a "*scale" here for scaling
   vec2 latticeCoord = worldToLattice * pos;
   return latticeCoord;
 }
 
 vec3 proceduralTilingAndBlending(vec2 uv, sampler2D inputTexture, float offset) {
-  // this is probably calculated by the compiler in advance, not 100% sure though
-  float triangleSize = 0.25;
-  float pi = 3.1415926;
-  mat2 latticeToWorld = mat2(triangleSize * cos(pi / 3), triangleSize, triangleSize * sin(pi / 3), 0);
-  //mat2 latticeToWorld = mat2(triangleSize * sin(pi / 3), 0, triangleSize * cos(pi / 3), triangleSize);
-  mat2 worldToLattice = inverse(latticeToWorld);
-
   float w1, w2, w3;
   ivec2 vertex1 , vertex2 , vertex3;
 
@@ -46,9 +40,9 @@ vec3 proceduralTilingAndBlending(vec2 uv, sampler2D inputTexture, float offset) 
   w3 = temp.y;
 
   // make sure to sample so that the hexagon fully lies within texture bounds
-  vec2 uv1 = triangleSize + hash(vertex1) * 2 * triangleSize + (pos - latticeToWorld * vertex1);
-  vec2 uv2 = triangleSize + hash(vertex2) * 2 * triangleSize + (pos - latticeToWorld * vertex2);
-  vec2 uv3 = triangleSize + hash(vertex3) * 2 * triangleSize + (pos - latticeToWorld * vertex3);
+  vec2 uv1 = triangleSize + hash(vertex1) * (1 - 2 * triangleSize) + (pos - latticeToWorld * vertex1);
+  vec2 uv2 = triangleSize + hash(vertex2) * (1 - 2 * triangleSize) + (pos - latticeToWorld * vertex2);
+  vec2 uv3 = triangleSize + hash(vertex3) * (1 - 2 * triangleSize) + (pos - latticeToWorld * vertex3);
 
   // Sample Texture
   vec3 I1 = textureLod(inputTexture, uv1, 0).rgb;
@@ -62,6 +56,8 @@ vec3 proceduralTilingAndBlending(vec2 uv, sampler2D inputTexture, float offset) 
   G = G + vec3(0.5);
 
   //return vec3(hash(vertex1).x, hash(vertex2).x, hash(vertex3).x);
+
+  return vec3(floor(latticeCoord), 0);
   
   return G;
 }

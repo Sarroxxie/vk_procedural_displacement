@@ -67,9 +67,12 @@ void main()
     uint txtId = mat.dispTextureID + dispObjDesc.i[gl_InstanceCustomIndexEXT].txtOffset;
     vec2 texCoord = intPayload.texCoord;
     //diffuse = textureLod(textureSamplers[nonuniformEXT(txtId - 1)], texCoord, pcRay.targetLod).rgb;
-    diffuse = textureLod(textureSamplers[nonuniformEXT(txtId)], texCoord, pcRay.targetLod).rrr;
+    //diffuse = textureLod(textureSamplers[nonuniformEXT(txtId)], texCoord, pcRay.targetLod).rrr;
     //diffuse = texelFetch(textureSamplers[nonuniformEXT(txtId)], ivec2(0,0), 12).rrr;
-    //diffuse = proceduralTilingAndBlending(texCoord, textureSamplers[nonuniformEXT(txtId)], pcRay.blendingOffset);
+    diffuse = proceduralTilingAndBlending(texCoord, textureSamplers[nonuniformEXT(txtId)], pcRay.blendingOffset);
+    //diffuse = intPayload.debugColor;
+    if (pcRay.raymarching == 1)
+      diffuse = intPayload.debugColor;
   }
   vec3  specular    = vec3(0);
   float attenuation = 0.3;

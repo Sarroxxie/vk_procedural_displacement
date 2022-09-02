@@ -182,6 +182,9 @@ int main(int argc, char** argv)
   // Setup Imgui
   helloVk.initGUI(0);  // Using sub-pass 0
 
+  helloVk.m_pcRay.blendingOffset = 1.0f;
+  helloVk.m_pcRay.lightIntensity = 30.f;
+
   // Starting value for the Displacement Amount parameter (that can be edited via ImGUI)
   helloVk.m_pcRay.displacementAmount = 3.5f;
   // Used for building the AABBs, therefore is the upper limit for displacement
