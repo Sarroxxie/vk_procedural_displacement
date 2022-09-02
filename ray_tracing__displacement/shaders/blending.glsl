@@ -57,7 +57,7 @@ vec3 proceduralTilingAndBlending(vec2 uv, sampler2D inputTexture, float offset) 
 
   //return vec3(hash(vertex1).x, hash(vertex2).x, hash(vertex3).x);
 
-  return vec3(floor(latticeCoord), 0);
+  //return vec3(floor(latticeCoord), 0);
   
   return G;
 }

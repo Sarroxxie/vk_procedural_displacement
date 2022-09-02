@@ -27,7 +27,8 @@ layout(push_constant) uniform _PushConstantRay { PushConstantRay pcRay; };
 const int MAX_STEPS = 300;
 const float STEP_SIZE = 0.1;
 // used for triforce descend -> count of how 1x1 lattice texel gets partitioned
-const int MAX_RANGE = 4;
+const int MAX_RANGE = 16;
+int MAX_LOD = 0;
 
 struct Ray
 {
@@ -456,19 +457,24 @@ bool triforceOutside(LatticeTriangle lTriangle) {
 
 // checks if a triangle (defined by points p0, p1, p2) in UV space is fully inside a texel
 vec2 heightFromUVTriangle(vec2 uv0, vec2 uv1, vec2 uv2) {
+  // TODO: does this compute component wise??
   vec2 minimum = min(uv0, min(uv1, uv2));
   vec2 maximum = max(uv0, max(uv1, uv2));
   float range  = max(maximum.x - minimum.x, maximum.y - minimum.y);
-  int lod = 0;
+  
+  // needs to be MAX_LOD - lod!!
+  int lod = MAX_LOD;
   float texelRange = 1;
   while (range < texelRange / 2) {
-    lod++;
+    lod--;
     texelRange /= 2;
   }
+
   int lodSize = textureSize(textureSamplers[nonuniformEXT(triangle.txtOffset)], lod).x;
   ivec2 minimumTexel = ivec2(floor(minimum * lodSize));
   ivec2 maximumTexel = ivec2(floor(maximum * lodSize));
-  vec2 minmax = vec2(1, 0);
+
+  vec2 minmax = texelFetch(textureSamplers[nonuniformEXT(triangle.txtOffset)], ivec2(minimumTexel), lod).yz;
   for (int x = minimumTexel.x; x < maximumTexel.x; x++) {
     for (int y = minimumTexel.y; y < maximumTexel.y; y++) {
       vec2 texel = texelFetch(textureSamplers[nonuniformEXT(triangle.txtOffset)], ivec2(x,y), lod).yz;
@@ -496,36 +502,22 @@ vec2 barycentricsFromLatticeTriangle(ivec2 p) {
   return barycentrics;
 }
 
-// TODO: implement this bounding box generation -> need to take the blending into account here
-// TODO: instead of LatticeTexel root, use LatticeTriangle root, as its vertices are needed for barycentrics calculation
-Aabb triforceBox(LatticeTriangle lTriangle, LatticeTexel root, mat3x3 pt, mat3x3 nt) {
-  // TODO: fill this method, this only makes shader compilation possible but produces invalid results
-
+Aabb triforceBox(LatticeTriangle lTriangle, LatticeTexel root, mat3x3 pt, mat3x3 nt, out vec3 debugColor) {
   // TODO: find a way to calculate a tighter AABB (in world space) -> transform the triangle into world space and then calculate an aabb
   //       instead of calculating an AABB in lattice space (because it will always be twice as big in lattice space as it has to be
   //       because the triangles have a 90° angle
 
-  // TODO: find out if this is even needed
   float inverseMaxRange = 1.0 / MAX_RANGE;
   vec2 l0 = root.lMin + lTriangle.base * inverseMaxRange;
   vec2 l1 = l0 + vec2(0, lTriangle.range) * inverseMaxRange;
   vec2 l2 = l0 + vec2(lTriangle.range, 0) * inverseMaxRange;
   
-  // 1. calculate barycentrics of lTriangle in relation to the rootTriangle (use lattice space)
+  // calculate barycentrics of lTriangle in relation to the rootTriangle (use lattice space)
   vec2 b0 = barycentricsFromLatticeTriangle(lTriangle.base);
   vec2 b1 = barycentricsFromLatticeTriangle(lTriangle.base + ivec2(0, lTriangle.range));
   vec2 b2 = barycentricsFromLatticeTriangle(lTriangle.base + ivec2(0, lTriangle.range));
 
-  // 2. calculate center of hexagon per vertex of rootTriangle (use hash()-function) -> this has to be done per rootTriangle, can precompute!
-
-  // these are stored in h0, h1 and h2!
-
-
-  // 3. for each of the 3 hexagons, calculate the triangle vertices that are used for blending that specific rootTriangle -> same as in 2., precompute!
-
-
-
-  // 4. for each of the 3 hexagon triangles, calculate lTriangle in UV space (use barycentrics calculated in 1. here)
+  // for each of the 3 hexagon triangles, calculate lTriangle in UV space (use barycentrics calculated in 1. here)
   ivec2 v0_offset = ivec2(0,0);
   ivec2 v1_offset = ivec2(0,1);
   ivec2 v2_offset = ivec2(1,0);
@@ -547,12 +539,12 @@ Aabb triforceBox(LatticeTriangle lTriangle, LatticeTexel root, mat3x3 pt, mat3x3
   vec2 uv2_1 = h2_0 + latticeToWorld * (l1 - (root.lMin + v2_offset));
   vec2 uv2_2 = h2_0 + latticeToWorld * (l2 - (root.lMin + v2_offset));
 
-  // 5. for each of the 3 lTriangle in UV space calculate minmax of height (use heightFromUVTriangle)
+  // for each of the 3 lTriangle in UV space calculate minmax of height (use heightFromUVTriangle)
   vec2 minmax0 = heightFromUVTriangle(uv0_0, uv0_1, uv0_2);
   vec2 minmax1 = heightFromUVTriangle(uv1_0, uv1_1, uv1_2);
   vec2 minmax2 = heightFromUVTriangle(uv2_0, uv2_1, uv2_2);
 
-  // 6. perform blending 3 of those minmax 3 times (use barycentrics as weights of each of lTriangle's vertices) -> total 6 blendings
+  // blending minmax 3 times (once for each UV-triangle)
   vec2 G0 = b0.x * minmax0 + b0.y * minmax1 + (1 - b0.x - b0.y) * minmax2;
   G0 = G0 - vec2(0.5);
   G0 = G0 * inversesqrt(b0.x * b0.x + b0.y * b0.y + (1 - b0.x - b0.y) * (1 - b0.x - b0.y));
@@ -568,20 +560,18 @@ Aabb triforceBox(LatticeTriangle lTriangle, LatticeTexel root, mat3x3 pt, mat3x3
   G2 = G2 * inversesqrt(b2.x * b2.x + b2.y * b2.y + (1 - b2.x - b2.y) * (1 - b2.x - b2.y));
   G2 = G2 + vec2(0.5);
 
-  // 7. calculate minmax of these blending results -> interval in which the height can be
-  float mininum = clamp(min(G0.x, min(G1.x, G2.x)), 0, 1) * pcRay.displacementAmount;
+  // calculate minmax of these blending results -> interval in which the height can be
+  float minimum = clamp(min(G0.x, min(G1.x, G2.x)), 0, 1) * pcRay.displacementAmount;
   float maximum = clamp(max(G0.y, max(G1.y, G2.y)), 0, 1) * pcRay.displacementAmount;
 
-  // 8. calculate affine form from height interval
-  vec4 affineHeight = 0.5 * vec4(mininum + maximum, 0, 0, maximum - mininum);
+  // TODO: find a better bias here
+  if (maximum - minimum < 0.05)
+    maximum += 0.05;
 
-  //vec2 minmax = globalMinMax * pcRay.displacementAmount;
-  //vec4 affineHeight = 0.5 * vec4(minmax.x + minmax.y, 0, 0, minmax.y - minmax.x);
+  // calculate affine form from height interval
+  vec4 affineHeight = 0.5 * vec4(minimum + maximum, 0, 0, maximum - minimum);
 
-
-  //TODO: adjust this code to fit with LatticeTriangle instead of LatticeTexel
-
-  // 2. calculate affine form [uv] for the triangle -> affine form layout: (xC, xU, xV, xK) -> see equation (12) of TFDM paper
+  // calculate affine form [uv] for the triangle -> affine form layout: (xC, xU, xV, xK) -> see equation (12) of TFDM paper
   // layout: (xC, xU, xV, xK)
   // this is just an AABB around the triangle in lattice space
   vec2 medianPoint = l0 + (lTriangle.range / 2.0) * inverseMaxRange;
@@ -597,10 +587,10 @@ Aabb triforceBox(LatticeTriangle lTriangle, LatticeTexel root, mat3x3 pt, mat3x3
 
   mat4x3 affinePos = pt * xy1;
 
-  // 4. calculate affine form [N] for normal in 3D space
+  // calculate affine form [N] for normal in 3D space
   mat4x3 affineNrm = nt * xy1;
 
-  // 5. calculate affine form [S] for displaced surface relative to given texel in 3D space -> [S] = [P] + [h] * [N]
+  // calculate affine form [S] for displaced surface relative to given texel in 3D space -> [S] = [P] + [h] * [N]
   vec4 row1 = affineFormDot(affineHeight, vec4(affineNrm[0][0], affineNrm[1][0], affineNrm[2][0], affineNrm[3][0]));
   vec4 row2 = affineFormDot(affineHeight, vec4(affineNrm[0][1], affineNrm[1][1], affineNrm[2][1], affineNrm[3][1]));
   vec4 row3 = affineFormDot(affineHeight, vec4(affineNrm[0][2], affineNrm[1][2], affineNrm[2][2], affineNrm[3][2]));
@@ -611,7 +601,7 @@ Aabb triforceBox(LatticeTriangle lTriangle, LatticeTexel root, mat3x3 pt, mat3x3
                      row1.w, row2.w, row3.w);
   mat4x3 affineDisp = affinePos + hn;
 
-  // 6. calculate AABB from [S] according to equation (13) of TFDM paper
+  // calculate AABB from [S] according to equation (13) of TFDM paper
   Aabb result;
   // TODO: should maybe do this with vector operations in the future for better performance
   result.minimum = vec3(affineDisp[0][0] - abs(affineDisp[1][0]) - abs(affineDisp[2][0]) - abs(affineDisp[3][0]),
@@ -620,7 +610,9 @@ Aabb triforceBox(LatticeTriangle lTriangle, LatticeTexel root, mat3x3 pt, mat3x3
   result.maximum = vec3(affineDisp[0][0] + abs(affineDisp[1][0]) + abs(affineDisp[2][0]) + abs(affineDisp[3][0]),
                         affineDisp[0][1] + abs(affineDisp[1][1]) + abs(affineDisp[2][1]) + abs(affineDisp[3][1]),
                         affineDisp[0][2] + abs(affineDisp[1][2]) + abs(affineDisp[2][2]) + abs(affineDisp[3][2]));
-
+  
+  // TODO: remove "debugColor" completely in the future
+  debugColor = vec3(maximum, maximum, maximum) / pcRay.displacementAmount;
   return result;
 }
 
@@ -657,7 +649,8 @@ float triforceTraversal(LatticeTexel root, out vec3 debugColor) {
 	  triforceNext(lTriangle);
 	  continue;
 	}
-	Aabb aabb = triforceBox(lTriangle, root, pt, nt);
+    vec3 color;
+	Aabb aabb = triforceBox(lTriangle, root, pt, nt, color);
 	float hitAABB = hitAabb(aabb, ray);
     // if AABB wasn't hit
 	if (!(hitAABB < -1.0 || hitAABB > -1.0)) {
@@ -666,7 +659,7 @@ float triforceTraversal(LatticeTexel root, out vec3 debugColor) {
 	} else if (abs(lTriangle.range) <= 1) {
       float hit = hitAABB;
       if (hit >= 0 && (tHit < 0 || hit < tHit)) {
-        debugColor = vec3((lTriangle.base + root.lMin), 0);
+        debugColor = color;//vec3((lTriangle.base + root.lMin), 0);
         tHit = hit;
         // TODO: set texture coordinates here
       }
@@ -854,6 +847,10 @@ void main()
   triangle.v2 = v2;
   triangle.txtOffset = mat.dispTextureID + dispObjDesc.i[gl_InstanceCustomIndexEXT].txtOffset;
 
+  while (textureSize(textureSamplers[nonuniformEXT(triangle.txtOffset)], MAX_LOD).x != 1) {
+    MAX_LOD++;
+  }
+
   // if a triangle is not displaced
   if (mat.dispTextureID < 0 || pcRay.displacementAmount <= 0)
   {
@@ -867,12 +864,12 @@ void main()
   }
 
   float newHit = -1;
-  if (pcRay.raymarching == 2) {
+  if (pcRay.raymarching == 0) {
     // fetch AABB
     Aabb aabb = Aabbs(objResource.aabbAddress).b[gl_PrimitiveID];
 
     newHit = raymarching(aabb);
-  } else if (pcRay.raymarching == 0) {
+  } else if (pcRay.raymarching == 2) {
     // fetch UV to barycentrics matrix
     uvToB = UVtoBs(objResource.uvToBAddress).m[gl_PrimitiveID];
 
