@@ -27,8 +27,9 @@ layout(push_constant) uniform _PushConstantRay { PushConstantRay pcRay; };
 const int MAX_STEPS = 300;
 const float STEP_SIZE = 0.1;
 // used for triforce descend -> count of how 1x1 lattice texel gets partitioned
-const int MAX_RANGE = 16;
+const int MAX_RANGE = 256;
 int MAX_LOD = 0;
+vec2 lattice0, lattice1, lattice2;
 
 struct Ray
 {
@@ -636,14 +637,14 @@ float triforceTraversal(LatticeTexel root, out vec3 debugColor) {
   while (!(abs(lTriangle.range) == MAX_RANGE && lTriangle.counter > 1)) {
     if (lTriangle.range == MAX_RANGE) {
       isRangeNegative = false;
-      h0_0 = hash(root.lMin);
-      h1_0 = hash(root.lMin + ivec2(0,1));
-      h2_0 = hash(root.lMin + ivec2(1,0));
+      h0_0 = triangleSize + hash(root.lMin) * (1 - 2 * triangleSize);
+      h1_0 = triangleSize + hash(root.lMin + ivec2(0,1)) * (1 - 2 * triangleSize);
+      h2_0 = triangleSize + hash(root.lMin + ivec2(1,0)) * (1 - 2 * triangleSize);
     } else if (lTriangle.range == -MAX_RANGE) {
       isRangeNegative = true;
-      h0_0 = hash(root.lMin + ivec2(1,1));
-      h1_0 = hash(root.lMin + ivec2(1,0));
-      h2_0 = hash(root.lMin + ivec2(0,1));
+      h0_0 = triangleSize + hash(root.lMin + ivec2(1,1)) * (1 - 2 * triangleSize);
+      h1_0 = triangleSize + hash(root.lMin + ivec2(1,0)) * (1 - 2 * triangleSize);
+      h2_0 = triangleSize + hash(root.lMin + ivec2(0,1)) * (1 - 2 * triangleSize);
     }
     if(triforceOutside(lTriangle)) {
 	  triforceNext(lTriangle);
@@ -770,6 +771,33 @@ Aabb latticeBox(LatticeTexel lTexel, mat3x3 pt, mat3x3 nt) {
 // TODO: should act similar as the "outside" function but for lattice-space -> need to adjust for this purpose
 bool latticeOutside(LatticeTexel lTexel) {
   return false;
+
+  // TODO: fix this code, produces wrong results
+  vec2 c = lTexel.lMin + 0.5 * vec2(lTexel.range);
+  float w = lTexel.range;
+
+  vec2 p0 = lattice0 - c;
+  vec2 p1 = lattice1 - c;
+  vec2 p2 = lattice2 - c;
+
+  vec2 minimum = min(vec2(w, w), max(p0, max(p1, p2)));
+  vec2 maximum = max(vec2(-w, -w), min(p0, min(p1, p2)));
+
+  if (minimum.x <= maximum.x || minimum.y <= maximum.y) {
+    return true;
+  }
+  vec2 sign0 = vec2(n0.x / abs(n0.x), n0.y / abs(n0.y));
+  vec2 sign1 = vec2(n1.x / abs(n1.x), n1.y / abs(n1.y));
+  vec2 sign2 = vec2(n2.x / abs(n2.x), n2.y / abs(n2.y));
+  
+  float dot0 = dot(n0, p0 + sign0 * w);
+  float dot1 = dot(n1, p1 + sign1 * w);
+  float dot2 = dot(n2, p2 + sign2 * w);
+  if (dot0 <= 0 || dot1 <= 0 || dot2 <= 0) {
+    return true;
+  }
+
+  return false;
 }
 // TODO: should determine somewhere inside, which lattice-triangle is hit and then call the 2nd hierarchy from there
 //         -> if 2nd hierarchy hit is negative, continue with the 1st hierarchy again (lattice-triangle)
@@ -889,8 +917,6 @@ void main()
     n1 = vec2(n1.y, -n1.x);
     n2 = vec2(n2.y, -n2.x);
 
-    // TODO: remove this debug color
-    intPayload.debugColor = vec3(1,0,0);
     newHit = traversal(pcRay.targetLod);
   } else {
     // procedural TFDM
@@ -900,6 +926,10 @@ void main()
     vec2 l0 = uvToLattice(v0.texCoord, pcRay.blendingOffset);
     vec2 l1 = uvToLattice(v1.texCoord, pcRay.blendingOffset);
     vec2 l2 = uvToLattice(v2.texCoord, pcRay.blendingOffset);
+
+    lattice0 = l0;
+    lattice1 = l1;
+    lattice2 = l2;
 
     // lattice to barycentrics
     lToB = mat3(l0.x, l0.y, 1,
