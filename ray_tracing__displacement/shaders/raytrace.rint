@@ -372,7 +372,12 @@ float raymarching(Aabb aabb) {
 // -----------------------------------------------------------------------------------------------------------
 // triforce descend
 
-vec2 uvToLattice(vec2 uv, float offset, mat2 worldToLattice) {
+vec2 uvToLattice(vec2 uv, float offset) {
+  float triangleSize = 0.25;
+  float pi = 3.1415926;
+  mat2 latticeToWorld = mat2(triangleSize * cos(pi / 3), triangleSize, triangleSize * sin(pi / 3), 0);
+  mat2 worldToLattice = inverse(latticeToWorld);
+
   vec2 pos = offset + (uv - 0.5); // could add a "*scale" here for scaling
   vec2 latticeCoord = worldToLattice * pos;
   return latticeCoord;
@@ -935,15 +940,10 @@ void main()
     // procedural TFDM
 
     // calculate lattice coords for vertices
-	// TODO: store these for all the shader -> allocate outside main
-    float triangleSize = 0.25;
-    float pi = 3.1415926;
-    mat2 latticeToWorld = mat2(triangleSize * cos(pi / 3), triangleSize, triangleSize * sin(pi / 3), 0);
-    mat2 worldToLattice = inverse(latticeToWorld);
-
-    vec2 l0 = uvToLattice(v0.texCoord, pcRay.blendingOffset, worldToLattice);
-    vec2 l1 = uvToLattice(v1.texCoord, pcRay.blendingOffset, worldToLattice);
-    vec2 l2 = uvToLattice(v2.texCoord, pcRay.blendingOffset, worldToLattice);
+    // TODO: rename lattice0, ... into l0 and use globally inside this shader
+    vec2 l0 = uvToLattice(v0.texCoord, pcRay.blendingOffset);
+    vec2 l1 = uvToLattice(v1.texCoord, pcRay.blendingOffset);
+    vec2 l2 = uvToLattice(v2.texCoord, pcRay.blendingOffset);
 
     lattice0 = l0;
     lattice1 = l1;
