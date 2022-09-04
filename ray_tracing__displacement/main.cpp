@@ -24,6 +24,8 @@
 
 #include <array>
 #include <filesystem>
+#include <math.h>
+#define _USE_MATH_DEFINES
 
 #include "backends/imgui_impl_glfw.h"
 #include "imgui.h"
@@ -184,6 +186,22 @@ int main(int argc, char** argv)
 
   helloVk.m_pcRay.blendingOffset = 1.0f;
   helloVk.m_pcRay.lightIntensity = 30.f;
+
+  // calculate lattice To World -> perform inversion as double precision to avoid artifacts
+  // column major
+  nvmath::vec4f worldToLattice;
+
+  // cos(PI/3) = 0.5
+  double a = helloVk.m_pcRay.triangleSize * cos(M_PI / 3.0);
+  double b = helloVk.m_pcRay.triangleSize;
+  double c = helloVk.m_pcRay.triangleSize * sin(M_PI / 3.0);
+  double d = 0;
+
+  // 1 / determinant
+  double det = a * d - b * c;
+
+  helloVk.m_pcRay.latticeToWorld = nvmath::vec4f(a, b, c, d);
+  helloVk.m_pcRay.worldToLattice = nvmath::vec4f(d / det, -b / det, -c / det, a / det);
 
   // Starting value for the Displacement Amount parameter (that can be edited via ImGUI)
   helloVk.m_pcRay.displacementAmount = 3.5f;

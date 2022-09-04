@@ -1,8 +1,8 @@
 // constants
-float triangleSize = 0.25;
-float pi = 3.1415926;
-mat2 latticeToWorld = mat2(triangleSize * cos(pi / 3), triangleSize, triangleSize * sin(pi / 3), 0);
-mat2 worldToLattice = inverse(latticeToWorld);
+//float triangleSize = 0.25;
+//float pi = 3.1415926;
+//mat2 latticeToWorld = mat2(triangleSize * cos(pi / 3), triangleSize, triangleSize * sin(pi / 3), 0);
+//mat2 worldToLattice = inverse(latticeToWorld);
 
 // Associates a random offset with vertex of triangle grid
 // see "Procedural Textures by Tiling and Blending" Listing 1.3
@@ -10,15 +10,14 @@ vec2 hash(vec2 vertex) {
   return fract(sin((vertex) * mat2(127.1, 311.7, 269.5, 183.3)) * 43758.5453);
 }
 
-vec2 uvToLattice(vec2 uv, float offset) {
-  vec2 pos = offset + (uv - 0.5); // could add a "*scale" here for scaling
-  vec2 latticeCoord = worldToLattice * pos;
-  return latticeCoord;
-}
-
 vec3 proceduralTilingAndBlending(vec2 uv, sampler2D inputTexture, float offset) {
   float w1, w2, w3;
   ivec2 vertex1 , vertex2 , vertex3;
+
+  float triangleSize = 0.25;
+  float pi = 3.1415926;
+  mat2 latticeToWorld = mat2(triangleSize * cos(pi / 3), triangleSize, triangleSize * sin(pi / 3), 0);
+  mat2 worldToLattice = inverse(latticeToWorld);
 
   vec2 pos = offset + (uv - 0.5); // could add a "*scale" here for scaling
   vec2 latticeCoord = worldToLattice * pos;
