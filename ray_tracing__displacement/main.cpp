@@ -184,7 +184,7 @@ int main(int argc, char** argv)
   // Setup Imgui
   helloVk.initGUI(0);  // Using sub-pass 0
 
-  helloVk.m_pcRay.blendingOffset = 1.0f;
+  helloVk.m_pcRay.blendingOffset = 0.0f;
   helloVk.m_pcRay.lightIntensity = 30.f;
 
   // calculate lattice To World -> perform inversion as double precision to avoid artifacts

@@ -67,16 +67,11 @@ void main()
     uint txtId = mat.dispTextureID + dispObjDesc.i[gl_InstanceCustomIndexEXT].txtOffset;
     vec2 texCoord = intPayload.texCoord;
 
-    // TODO: worldToLattice etc. from vec4 to mat2
-
-    // TODO: remove these hardcoded texCoord
-    texCoord = (worldPos.xz + 20) / 40.0;
-    texCoord = vec2(texCoord.y, -texCoord.x);
     //diffuse = textureLod(textureSamplers[nonuniformEXT(txtId - 1)], texCoord, pcRay.targetLod).rgb;
     //diffuse = textureLod(textureSamplers[nonuniformEXT(txtId)], texCoord, pcRay.targetLod).rrr;
     //diffuse = texelFetch(textureSamplers[nonuniformEXT(txtId)], ivec2(0,0), 12).rrr;
     diffuse = proceduralTilingAndBlending(texCoord, textureSamplers[nonuniformEXT(txtId)], 
-                                          pcRay.blendingOffset);
+                                          pcRay.blendingOffset).xxx;
     //diffuse = intPayload.debugColor;
     if (pcRay.raymarching == 1)
       diffuse = intPayload.debugColor;
