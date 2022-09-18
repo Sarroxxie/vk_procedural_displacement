@@ -27,7 +27,7 @@ layout(push_constant) uniform _PushConstantRay { PushConstantRay pcRay; };
 const int MAX_STEPS = 300;
 const float STEP_SIZE = 0.1;
 // used for triforce descend -> count of how 1x1 lattice texel gets partitioned
-const int MAX_RANGE = 128;
+const int MAX_RANGE = 256;
 const float INVERSE_MAX_RANGE = 1.0 / MAX_RANGE;
 int MAX_LOD = 0;
 vec2 lattice0, lattice1, lattice2;
@@ -464,10 +464,6 @@ void triforceNext(inout LatticeTriangle lTriangle) {
   }
 }
 
-bool triforceOutside(LatticeTriangle lTriangle) {
-  return false;
-}
-
 // checks if a triangle (defined by points p0, p1, p2) in UV space is fully inside a texel
 vec2 heightFromUVTriangle(vec2 uv0, vec2 uv1, vec2 uv2) {
   // TODO: does this compute component wise??
@@ -663,6 +659,37 @@ Aabb triforceBox(LatticeTriangle lTriangle, LatticeTexel root, mat3x3 pt, mat3x3
   return result;
 }
 
+// TODO: should act similar as the "outside" function but for lattice-space -> need to adjust for this purpose
+bool triforceOutside(LatticeTriangle lTriangle, LatticeTexel root) {
+  // TODO: fix this code, produces wrong results
+  vec2 c  = root.lMin + (lTriangle.base + vec2(lTriangle.range / 2.0)) * INVERSE_MAX_RANGE;
+  float w = (abs(lTriangle.range) / 2.0) * INVERSE_MAX_RANGE;
+
+  vec2 p0 = lattice0 - c;
+  vec2 p1 = lattice1 - c;
+  vec2 p2 = lattice2 - c;
+
+  vec2 minimum = min(vec2(w, w), max(p0, max(p1, p2)));
+  vec2 maximum = max(vec2(-w, -w), min(p0, min(p1, p2)));
+  
+  if (minimum.x <= maximum.x || minimum.y <= maximum.y) {
+    return true;
+  }
+  
+  vec2 sign0 = vec2(n0.x / abs(n0.x), n0.y / abs(n0.y));
+  vec2 sign1 = vec2(n1.x / abs(n1.x), n1.y / abs(n1.y));
+  vec2 sign2 = vec2(n2.x / abs(n2.x), n2.y / abs(n2.y));
+  
+  float dot0 = dot(n0, p0 + sign0 * w);
+  float dot1 = dot(n1, p1 + sign1 * w);
+  float dot2 = dot(n2, p2 + sign2 * w);
+  if (dot0 <= 0 || dot1 <= 0 || dot2 <= 0) {
+    return true;
+  }
+
+  return false;
+}
+
 // TODO: in the future triforceTraversal should be called twice inside of latticeTraversal! would get rid of some edge cases and make better performance
 //         -> this would remove the next() function on the highest level (if range = MAX_RANGE)
 float triforceTraversal(LatticeTexel root, out vec3 debugColor, mat2 latticeToWorld, float triangleSize) {
@@ -692,7 +719,7 @@ float triforceTraversal(LatticeTexel root, out vec3 debugColor, mat2 latticeToWo
       h1_0 = triangleSize + hash(root.lMin + ivec2(1,0)) * (1 - 2 * triangleSize);
       h2_0 = triangleSize + hash(root.lMin + ivec2(0,1)) * (1 - 2 * triangleSize);
     }
-    if(triforceOutside(lTriangle)) {
+    if(triforceOutside(lTriangle, root)) {
 	  triforceNext(lTriangle);
 	  continue;
 	}
@@ -816,11 +843,9 @@ Aabb latticeBox(LatticeTexel lTexel, mat3x3 pt, mat3x3 nt) {
 
 // TODO: should act similar as the "outside" function but for lattice-space -> need to adjust for this purpose
 bool latticeOutside(LatticeTexel lTexel) {
-  return false;
-
   // TODO: fix this code, produces wrong results
-  vec2 c  = lTexel.lMin + vec2(lTexel.range / 2);
-  float w = lTexel.range / 2;
+  vec2 c  = lTexel.lMin + vec2(lTexel.range / 2.0);
+  float w = lTexel.range / 2.0;
 
   vec2 p0 = lattice0 - c;
   vec2 p1 = lattice1 - c;
@@ -832,6 +857,7 @@ bool latticeOutside(LatticeTexel lTexel) {
   if (minimum.x <= maximum.x || minimum.y <= maximum.y) {
     return true;
   }
+
   vec2 sign0 = vec2(n0.x / abs(n0.x), n0.y / abs(n0.y));
   vec2 sign1 = vec2(n1.x / abs(n1.x), n1.y / abs(n1.y));
   vec2 sign2 = vec2(n2.x / abs(n2.x), n2.y / abs(n2.y));
@@ -986,12 +1012,6 @@ void main()
       reportIntersectionEXT(newHit, KIND_TRIANGLE);
     return;
     */
-
-
-
-
-
-
 
     // procedural TFDM
 

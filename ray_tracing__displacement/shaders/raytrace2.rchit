@@ -68,10 +68,9 @@ void main()
     vec2 texCoord = intPayload.texCoord;
 
     //diffuse = textureLod(textureSamplers[nonuniformEXT(txtId - 1)], texCoord, pcRay.targetLod).rgb;
-    //diffuse = textureLod(textureSamplers[nonuniformEXT(txtId)], texCoord, pcRay.targetLod).rrr;
+    diffuse = textureLod(textureSamplers[nonuniformEXT(txtId)], texCoord, pcRay.targetLod).rrr;
     //diffuse = texelFetch(textureSamplers[nonuniformEXT(txtId)], ivec2(0,0), 12).rrr;
-    diffuse = proceduralTilingAndBlending(texCoord, textureSamplers[nonuniformEXT(txtId)], 
-                                          pcRay.blendingOffset).xxx;
+    //diffuse = proceduralTilingAndBlending(texCoord, textureSamplers[nonuniformEXT(txtId)], pcRay.blendingOffset).xxx;
     //diffuse = intPayload.debugColor;
     if (pcRay.raymarching == 1)
       diffuse = intPayload.debugColor;
