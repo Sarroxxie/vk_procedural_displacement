@@ -181,6 +181,8 @@ public:
   // Push constant for ray tracer
   PushConstantRay m_pcRay{
       {1.f, 1.f, 1.f, 1.f},  // clear color
+      {0.f},                 // latticeToWorld
+      {0.f},                 // worldToLattice
       {10.f, 15.f, 8.f},     // light position
       100.f,                 // light intensity
       0,                     // light type
@@ -188,6 +190,7 @@ public:
       0.f,                   // blending offset
       0,                     // raymarching
       1,                     // target LOD
+      0.25f,                 // triangleSize
   };
 
   // @author Josias

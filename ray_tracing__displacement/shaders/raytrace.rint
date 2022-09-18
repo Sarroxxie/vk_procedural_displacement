@@ -26,6 +26,11 @@ layout(push_constant) uniform _PushConstantRay { PushConstantRay pcRay; };
 
 const int MAX_STEPS = 300;
 const float STEP_SIZE = 0.1;
+// used for triforce descend -> count of how 1x1 lattice texel gets partitioned
+const int MAX_RANGE = 256;
+const float INVERSE_MAX_RANGE = 1.0 / MAX_RANGE;
+int MAX_LOD = 0;
+vec2 lattice0, lattice1, lattice2;
 
 struct Ray
 {
@@ -38,6 +43,12 @@ Triangle triangle;
 
 // UV to barycentric coordinates
 mat3 uvToB;
+
+// lattice to barycentric coordinates
+mat3 lToB;
+
+// global minmax
+vec2 globalMinMax;
 
 // outward pointing normals in UV space like in Algorithm 4 in TFDM paper
 vec2 n0, n1, n2;
@@ -79,6 +90,9 @@ vec3 hitTriangle(const Triangle t, const Ray r)
   float tHit = f * dot(e2, z);
   return vec3(u,v,tHit);
 }
+
+// -----------------------------------------------------------------------------------------------------------
+// Tessellation-Free Displacement Mapping
 
 // stores the integer coordinate of a texel and the LoD level it belongs to
 struct Texel
@@ -213,7 +227,7 @@ Aabb box(Texel texel, mat3x3 pt, mat3x3 nt) {
 bool outside(Texel texel) {
   int texSize = textureSize(textureSamplers[nonuniformEXT(triangle.txtOffset)], texel.lod).x;
   vec2 c = vec2(texel.coord + 0.5) / texSize;
-  float w = 1.0 / texSize;
+  float w = 0.5 / texSize;
 
   vec2 p0 = triangle.v0.texCoord - c;
   vec2 p1 = triangle.v1.texCoord - c;
@@ -271,12 +285,13 @@ float traversal(int targetLoD) {
       // TODO: implement "local_intersection()" function
       //float hit = local_intersection(texel, ray);
       float hit = hitAABB;
-    if (hit >= 0 && (tHit < 0 || hit < tHit)) {
-      tHit = hit;
-      // calculate texture coordinates for the closest hit shader 
-      //   -> note: these are the texture coordinates for the middle of the texel (fixed for the AABB)
-      intPayload.texCoord = vec2(texel.coord + 0.5) / textureSize(textureSamplers[nonuniformEXT(triangle.txtOffset)], texel.lod);
-    }
+      if (hit >= 0 && (tHit < 0 || hit < tHit)) {
+      // update intersection to the new intersection
+        tHit = hit;
+        // calculate texture coordinates for the closest hit shader 
+        //   -> note: these are the texture coordinates for the middle of the texel (fixed for the AABB)
+        intPayload.texCoord = vec2(texel.coord + 0.5) / textureSize(textureSamplers[nonuniformEXT(triangle.txtOffset)], texel.lod);
+      }
       next(texel);
     } else {
       down(texel);
@@ -286,6 +301,9 @@ float traversal(int targetLoD) {
   intPayload.worldNrm = vec3(0,1,0);
   return tHit;
 }
+
+// -----------------------------------------------------------------------------------------------------------
+// raymarching
 
 // perform raymarching to calculate intersection with the displaced surface
 float raymarching(Aabb aabb) {
@@ -351,6 +369,552 @@ float raymarching(Aabb aabb) {
   return tHit > 0 ? tHit + tHitAABB : -1;
 }
 
+// -----------------------------------------------------------------------------------------------------------
+// triforce descend
+
+vec2 uvToLattice(vec2 uv, float offset) {
+  float triangleSize = 0.25;
+  float pi = 3.1415926;
+  mat2 latticeToWorld = mat2(triangleSize * cos(pi / 3), triangleSize, triangleSize * sin(pi / 3), 0);
+  mat2 worldToLattice = inverse(latticeToWorld);
+
+  vec2 pos = offset + (uv - 0.5); // could add a "*scale" here for scaling
+  vec2 latticeCoord = worldToLattice * pos;
+  return latticeCoord;
+}
+
+// centers of hexagons hashed from v0, v1 and v2 of rootLatticeTriangle
+vec2 h0_0, h0_1, h0_2;
+vec2 h1_0, h1_1, h1_2;
+vec2 h2_0, h2_1, h2_2;
+bool isRangeNegative;
+
+struct LatticeTexel
+{
+  ivec2 lMin;
+  // range always has to be power of 2!
+  int range;
+  // 0: botLeft
+  // 1: topLeft
+  // 2: botRight
+  // 3: topRight
+  int counter;
+};
+
+struct LatticeTriangle
+{
+  ivec2 base;
+  int range;
+  int counter;
+};
+
+bool latticeTriangleEquals(LatticeTriangle t1, LatticeTriangle t2) {
+  if (t1.base == t2.base && t1.range == t2.range && t1.counter == t2.counter)
+    return true;
+  return false;
+}
+
+void triforceDown(inout LatticeTriangle lTriangle) {
+  lTriangle.range /= 2;
+  lTriangle.counter = 0;
+}
+
+void triforceUp(inout LatticeTriangle lTriangle) {
+  lTriangle.base += lTriangle.range;
+  lTriangle.range *= -2;
+  ivec2 temp = lTriangle.base % (lTriangle.range * 2);
+  temp = ivec2(temp / lTriangle.range) % 2;
+  lTriangle.counter = 2 * temp.x + temp.y;
+}
+
+void triforceNext(inout LatticeTriangle lTriangle) {
+  // TODO: need to set the MAX_RANGE somewhere
+  // highest level, where there are only 2 triangles that form one 1x1 LatticeTexel
+  while (true) {
+    if (abs(lTriangle.range) == MAX_RANGE) {
+      lTriangle.base += lTriangle.range;
+      lTriangle.range = -lTriangle.range;
+      lTriangle.counter++;
+      return;
+    }
+    switch(lTriangle.counter) {
+	// texelCoord = (0,1)
+    case 1:
+      lTriangle.base += ivec2(lTriangle.range, -lTriangle.range);
+	  lTriangle.counter++;
+      return;
+
+    case 2:
+      lTriangle.base.y += lTriangle.range;
+      lTriangle.range = -lTriangle.range;
+      lTriangle.counter++;
+      return;
+
+    // texelCoord = (1,1)
+    case 3:
+      triforceUp(lTriangle);
+      continue;
+
+    // texelCoord = (0,0) or (1,0)
+    default:
+      lTriangle.base.y += lTriangle.range;
+	  lTriangle.counter++;
+      return;
+	}
+  }
+}
+
+// checks if a triangle (defined by points p0, p1, p2) in UV space is fully inside a texel
+vec2 heightFromUVTriangle(vec2 uv0, vec2 uv1, vec2 uv2) {
+  // TODO: does this compute component wise??
+  vec2 minimum = min(uv0, min(uv1, uv2));
+  vec2 maximum = max(uv0, max(uv1, uv2));
+  float range  = max(maximum.x - minimum.x, maximum.y - minimum.y);
+  
+  // needs to be MAX_LOD - lod!!
+  int lod = MAX_LOD;
+  float texelRange = 1;
+  while (range < texelRange / 2) {
+    lod--;
+    texelRange /= 2;
+  }
+
+  int lodSize = textureSize(textureSamplers[nonuniformEXT(triangle.txtOffset)], lod).x;
+  ivec2 minimumTexel = ivec2(floor(minimum * lodSize));
+  ivec2 maximumTexel = ivec2(floor(maximum * lodSize));
+
+  vec2 minmax = texelFetch(textureSamplers[nonuniformEXT(triangle.txtOffset)], ivec2(minimumTexel), lod).yz;
+  for (int x = minimumTexel.x; x < maximumTexel.x; x++) {
+    for (int y = minimumTexel.y; y < maximumTexel.y; y++) {
+      vec2 texel = texelFetch(textureSamplers[nonuniformEXT(triangle.txtOffset)], ivec2(x,y), lod).yz;
+      minmax.x = min(minmax.x, texel.x);
+      minmax.y = max(minmax.y, texel.y);
+    }
+  }
+  return minmax;
+}
+
+// will calculate the barycentrics of a point that is known to be inside a LatticeTriangle with range = MAX_RANGE (-> isRangeNegative = false) or
+// with range = -MAX_RANGE (-> isRangeNegative = true)
+// for detailed description see notes!!
+vec2 barycentricsFromLatticeTriangle(ivec2 p) {
+  vec2 barycentrics;
+  // TODO: make sure that all divisions are floating point operations
+  if (isRangeNegative) {
+    barycentrics.y = abs(MAX_RANGE - p.y) * INVERSE_MAX_RANGE;
+    barycentrics.x = 1 - barycentrics.y - (abs(MAX_RANGE - p.x) * INVERSE_MAX_RANGE);
+  } else {
+    barycentrics.y = p.y * INVERSE_MAX_RANGE;
+    barycentrics.x = 1 - barycentrics.y - (p.x * INVERSE_MAX_RANGE);
+  }
+  return barycentrics;
+}
+
+Aabb triforceBox(LatticeTriangle lTriangle, LatticeTexel root, mat3x3 pt, mat3x3 nt, out vec3 debugColor) {
+  // TODO: find a way to calculate a tighter AABB (in world space) -> transform the triangle into world space and then calculate an aabb
+  //       instead of calculating an AABB in lattice space (because it will always be twice as big in lattice space as it has to be
+  //       because the triangles have a 90° angle
+  float triangleSize = 0.25;
+  float pi = 3.1415926;
+  mat2 latticeToWorld = mat2(triangleSize * cos(pi / 3), triangleSize, triangleSize * sin(pi / 3), 0);
+
+  vec2 l0 = root.lMin + lTriangle.base * INVERSE_MAX_RANGE;
+  vec2 l1 = root.lMin + (lTriangle.base + ivec2(0, lTriangle.range)) * INVERSE_MAX_RANGE;
+  vec2 l2 = root.lMin + (lTriangle.base + ivec2(lTriangle.range, 0)) * INVERSE_MAX_RANGE;
+  
+  // calculate barycentrics of lTriangle in relation to the rootTriangle (use lattice space)
+  vec2 b0 = barycentricsFromLatticeTriangle(lTriangle.base);
+  vec2 b1 = barycentricsFromLatticeTriangle(lTriangle.base + ivec2(0, lTriangle.range));
+  vec2 b2 = barycentricsFromLatticeTriangle(lTriangle.base + ivec2(0, lTriangle.range));
+
+  // for each of the 3 hexagon triangles, calculate lTriangle in UV space (use barycentrics calculated in 1. here)
+  ivec2 v0_offset = ivec2(0,0);
+  ivec2 v1_offset = ivec2(0,1);
+  ivec2 v2_offset = ivec2(1,0);
+  if (isRangeNegative) {
+    v0_offset = ivec2(1,1);
+    v1_offset = ivec2(1,0);
+    v2_offset = ivec2(0,1);
+  }
+
+  // TODO: fix this so it does not produce edges in the "texture"
+  vec2 tmp0 = lTriangle.base * INVERSE_MAX_RANGE;
+  vec2 tmp1 = (lTriangle.base + ivec2(0, lTriangle.range)) * INVERSE_MAX_RANGE;
+  vec2 tmp2 = (lTriangle.base + ivec2(lTriangle.range, 0)) * INVERSE_MAX_RANGE;
+
+  vec2 uv0_0 = h0_0 + latticeToWorld * (tmp0 - v0_offset);
+  vec2 uv0_1 = h0_0 + latticeToWorld * (tmp1 - v0_offset);
+  vec2 uv0_2 = h0_0 + latticeToWorld * (tmp2 - v0_offset);
+
+  vec2 uv1_0 = h1_0 + latticeToWorld * (tmp0 - v1_offset);
+  vec2 uv1_1 = h1_0 + latticeToWorld * (tmp1 - v1_offset);
+  vec2 uv1_2 = h1_0 + latticeToWorld * (tmp2 - v1_offset);
+
+  vec2 uv2_0 = h2_0 + latticeToWorld * (tmp0 - v2_offset);
+  vec2 uv2_1 = h2_0 + latticeToWorld * (tmp1 - v2_offset);
+  vec2 uv2_2 = h2_0 + latticeToWorld * (tmp2 - v2_offset);
+
+  // for each of the 3 lTriangle in UV space calculate minmax of height (use heightFromUVTriangle)
+  vec2 minmax0 = heightFromUVTriangle(uv0_0, uv0_1, uv0_2);
+  vec2 minmax1 = heightFromUVTriangle(uv1_0, uv1_1, uv1_2);
+  vec2 minmax2 = heightFromUVTriangle(uv2_0, uv2_1, uv2_2);
+
+  vec2 numerator1 = b0.x * minmax0 + b0.y * minmax1 + (1 - b0.x - b0.y) * minmax2 - 0.5;
+  vec2 numerator2 = b1.x * minmax0 + b1.y * minmax1 + (1 - b1.x - b0.y) * minmax2 - 0.5;
+  vec2 numerator3 = b2.x * minmax0 + b2.y * minmax1 + (1 - b2.x - b0.y) * minmax2 - 0.5;
+
+  vec2 minmaxNum = vec2(min(numerator1.x, min(numerator2.x, numerator3.x)), max(numerator1.y, max(numerator2.y, numerator3.y)));
+
+  vec2 bxRange = vec2(min(b0.x, min(b1.x, b2.x)), max(b0.x, max(b1.x, b2.x)));
+  vec2 byRange = vec2(min(b0.y, min(b1.y, b2.y)), max(b0.y, max(b1.y, b2.y)));
+
+  vec4 affineBxRange = 0.5 * vec4(bxRange.x + bxRange.y, bxRange.y - bxRange.x, 0, 0);
+  vec4 affineByRange = 0.5 * vec4(byRange.x + byRange.y, 0, byRange.y - byRange.x, 0);
+
+  vec4 denom1 = 2 * (affineFormDot(affineBxRange, affineBxRange) - affineBxRange + affineFormDot(affineByRange, affineByRange) 
+                - affineByRange + affineFormDot(affineBxRange, affineByRange)) + 1;
+
+  float denomMin = clamp(sqrt(denom1.x - abs(denom1.y) - abs(denom1.z) - abs(denom1.w)), sqrt(3.0) / 3, 1);
+  float denomMax = clamp(sqrt(denom1.x + abs(denom1.y) + abs(denom1.z) + abs(denom1.w)), sqrt(3.0) / 3, 1);
+
+  float blend1 = minmaxNum.x / denomMin + 0.5;
+  float blend2 = minmaxNum.x / denomMax + 0.5;
+  float blend3 = minmaxNum.y / denomMin + 0.5;
+  float blend4 = minmaxNum.y / denomMax + 0.5;
+
+  float minimum = clamp(min(blend1, min(blend2, min(blend3, blend4))), 0, 1) * pcRay.displacementAmount;
+  float maximum = clamp(max(blend1, max(blend2, max(blend3, blend4))), 0, 1) * pcRay.displacementAmount;
+
+  /*
+
+  // blending minmax 3 times (once for each UV-triangle)
+  vec2 G0 = b0.x * minmax0 + b0.y * minmax1 + (1 - b0.x - b0.y) * minmax2;
+  G0 = G0 - vec2(0.5);
+  G0 = G0 * inversesqrt(b0.x * b0.x + b0.y * b0.y + (1 - b0.x - b0.y) * (1 - b0.x - b0.y));
+  G0 = G0 + vec2(0.5);
+
+  vec2 G1 = b1.x * minmax0 + b1.y * minmax1 + (1 - b1.x - b1.y) * minmax2;
+  G1 = G1 - vec2(0.5);
+  G1 = G1 * inversesqrt(b1.x * b1.x + b1.y * b1.y + (1 - b1.x - b1.y) * (1 - b1.x - b1.y));
+  G1 = G1 + vec2(0.5);
+
+  vec2 G2 = b2.x * minmax0 + b2.y * minmax1 + (1 - b2.x - b2.y) * minmax2;
+  G2 = G2 - vec2(0.5);
+  G2 = G2 * inversesqrt(b2.x * b2.x + b2.y * b2.y + (1 - b2.x - b2.y) * (1 - b2.x - b2.y));
+  G2 = G2 + vec2(0.5);
+
+  // calculate minmax of these blending results -> interval in which the height can be
+  float minimum = clamp(min(G0.x, min(G1.x, G2.x)), 0, 1) * pcRay.displacementAmount;
+  float maximum = clamp(max(G0.y, max(G1.y, G2.y)), 0, 1) * pcRay.displacementAmount;*/
+
+  // TODO: find a better bias here
+  if (maximum - minimum < 0.05)
+    maximum += 0.05;
+
+  // calculate affine form from height interval
+  vec4 affineHeight = 0.5 * vec4(minimum + maximum, 0, 0, maximum - minimum);
+
+  // calculate affine form [uv] for the triangle -> affine form layout: (xC, xU, xV, xK) -> see equation (12) of TFDM paper
+  // layout: (xC, xU, xV, xK)
+  // this is just an AABB around the triangle in lattice space
+  vec2 medianPoint = l0 + (lTriangle.range / 2.0) * INVERSE_MAX_RANGE;
+  vec4 x = vec4(medianPoint.x, (lTriangle.range / 2.0) * INVERSE_MAX_RANGE, 0, 0);
+  // layout: (xC, xU, xV, xK)
+  vec4 y = vec4(medianPoint.y, 0, (lTriangle.range / 2.0) * INVERSE_MAX_RANGE, 0);
+
+  // 3. calculate affine form [P] for position in 3D space
+  mat4x3 xy1 = mat4x3(x.x, y.x, 1,
+                      x.y, y.y, 0,
+                      x.z, y.z, 0,
+                      x.w, y.w, 0);
+
+  mat4x3 affinePos = pt * xy1;
+
+  // calculate affine form [N] for normal in 3D space
+  mat4x3 affineNrm = nt * xy1;
+
+  // calculate affine form [S] for displaced surface relative to given texel in 3D space -> [S] = [P] + [h] * [N]
+  vec4 row1 = affineFormDot(affineHeight, vec4(affineNrm[0][0], affineNrm[1][0], affineNrm[2][0], affineNrm[3][0]));
+  vec4 row2 = affineFormDot(affineHeight, vec4(affineNrm[0][1], affineNrm[1][1], affineNrm[2][1], affineNrm[3][1]));
+  vec4 row3 = affineFormDot(affineHeight, vec4(affineNrm[0][2], affineNrm[1][2], affineNrm[2][2], affineNrm[3][2]));
+  // the affine form [hn] = [h] * [N]
+  mat4x3 hn = mat4x3(row1.x, row2.x, row3.x,
+                     row1.y, row2.y, row3.y,
+                     row1.z, row2.z, row3.z,
+                     row1.w, row2.w, row3.w);
+  mat4x3 affineDisp = affinePos + hn;
+
+  // calculate AABB from [S] according to equation (13) of TFDM paper
+  Aabb result;
+  // TODO: should maybe do this with vector operations in the future for better performance
+  result.minimum = vec3(affineDisp[0][0] - abs(affineDisp[1][0]) - abs(affineDisp[2][0]) - abs(affineDisp[3][0]),
+                        affineDisp[0][1] - abs(affineDisp[1][1]) - abs(affineDisp[2][1]) - abs(affineDisp[3][1]),
+                        affineDisp[0][2] - abs(affineDisp[1][2]) - abs(affineDisp[2][2]) - abs(affineDisp[3][2]));
+  result.maximum = vec3(affineDisp[0][0] + abs(affineDisp[1][0]) + abs(affineDisp[2][0]) + abs(affineDisp[3][0]),
+                        affineDisp[0][1] + abs(affineDisp[1][1]) + abs(affineDisp[2][1]) + abs(affineDisp[3][1]),
+                        affineDisp[0][2] + abs(affineDisp[1][2]) + abs(affineDisp[2][2]) + abs(affineDisp[3][2]));
+  
+  // TODO: remove "debugColor" completely in the future
+  debugColor = vec3(maximum, maximum, maximum) / pcRay.displacementAmount;
+  return result;
+}
+
+// TODO: should act similar as the "outside" function but for lattice-space -> need to adjust for this purpose
+bool triforceOutside(LatticeTriangle lTriangle, LatticeTexel root) {
+  // TODO: fix this code, produces wrong results
+  vec2 c  = root.lMin + (lTriangle.base + vec2(lTriangle.range / 2.0)) * INVERSE_MAX_RANGE;
+  float w = (abs(lTriangle.range) / 2.0) * INVERSE_MAX_RANGE;
+
+  vec2 p0 = lattice0 - c;
+  vec2 p1 = lattice1 - c;
+  vec2 p2 = lattice2 - c;
+
+  vec2 minimum = min(vec2(w, w), max(p0, max(p1, p2)));
+  vec2 maximum = max(vec2(-w, -w), min(p0, min(p1, p2)));
+  
+  if (minimum.x <= maximum.x || minimum.y <= maximum.y) {
+    return true;
+  }
+  
+  vec2 sign0 = vec2(n0.x / abs(n0.x), n0.y / abs(n0.y));
+  vec2 sign1 = vec2(n1.x / abs(n1.x), n1.y / abs(n1.y));
+  vec2 sign2 = vec2(n2.x / abs(n2.x), n2.y / abs(n2.y));
+  
+  float dot0 = dot(n0, p0 + sign0 * w);
+  float dot1 = dot(n1, p1 + sign1 * w);
+  float dot2 = dot(n2, p2 + sign2 * w);
+  if (dot0 <= 0 || dot1 <= 0 || dot2 <= 0) {
+    return true;
+  }
+
+  return false;
+}
+
+// TODO: in the future triforceTraversal should be called twice inside of latticeTraversal! would get rid of some edge cases and make better performance
+//         -> this would remove the next() function on the highest level (if range = MAX_RANGE)
+float triforceTraversal(LatticeTexel root, out vec3 debugColor, mat2 latticeToWorld, float triangleSize) {
+  float tHit = -1;
+  LatticeTriangle lTriangle;
+  lTriangle.base    = ivec2(0,0);
+  lTriangle.range   = MAX_RANGE;
+  lTriangle.counter = 0;
+
+  mat3x3 pt = mat3x3(triangle.v0.pos, triangle.v1.pos, triangle.v2.pos) * lToB;
+  mat3x3 nt = mat3x3(triangle.v0.nrm, triangle.v1.nrm, triangle.v2.nrm) * lToB;
+  
+  // there are only 2 triangles on the highest level:
+  //   bottom:  base = (0,0)                    range =  MAX_RANGE    counter = 0
+  //   top:     base = (MAX_RANGE,MAX_RANGE)    range = -MAX_RANGE    counter = 1
+  //   so this stops when next() got called upon the "top" triangle, which produces
+  //   invalid: base = (0,0)                    range =  MAX_RANGE    counter = 2
+  while (!(abs(lTriangle.range) == MAX_RANGE && lTriangle.counter > 1)) {
+    if (lTriangle.range == MAX_RANGE) {
+      isRangeNegative = false;
+      h0_0 = triangleSize + hash(root.lMin) * (1 - 2 * triangleSize);
+      h1_0 = triangleSize + hash(root.lMin + ivec2(0,1)) * (1 - 2 * triangleSize);
+      h2_0 = triangleSize + hash(root.lMin + ivec2(1,0)) * (1 - 2 * triangleSize);
+    } else if (lTriangle.range == -MAX_RANGE) {
+      isRangeNegative = true;
+      h0_0 = triangleSize + hash(root.lMin + ivec2(1,1)) * (1 - 2 * triangleSize);
+      h1_0 = triangleSize + hash(root.lMin + ivec2(1,0)) * (1 - 2 * triangleSize);
+      h2_0 = triangleSize + hash(root.lMin + ivec2(0,1)) * (1 - 2 * triangleSize);
+    }
+    if(triforceOutside(lTriangle, root)) {
+	  triforceNext(lTriangle);
+	  continue;
+	}
+    vec3 color;
+	Aabb aabb = triforceBox(lTriangle, root, pt, nt, color);
+	float hitAABB = hitAabb(aabb, ray);
+    // if AABB wasn't hit
+	if (!(hitAABB < -1.0 || hitAABB > -1.0)) {
+	  triforceNext(lTriangle);
+	 // if smallest lattice texel is reached
+	} else if (abs(lTriangle.range) <= 1) {
+      float hit = hitAABB;
+      if (hit >= 0 && (tHit < 0 || hit < tHit)) {
+        debugColor = color;//vec3((lTriangle.base + root.lMin), 0);
+        tHit = hit;
+        // TODO: set texture coordinates here
+      }
+      triforceNext(lTriangle);
+	} else {
+	  triforceDown(lTriangle);
+	}
+  }
+  // TODO: set tex coords somewhere
+  //intPayload.worldNrm = vec3(0,1,0);
+  return tHit;
+}
+
+// -----------------------------------------------------------------------------------------------------------
+// lattice descend
+
+bool latticeTexelEquals(LatticeTexel t1, LatticeTexel t2) {
+  if (t1.lMin == t2.lMin && t1.range == t2.range && t1.counter == t2.counter)
+    return true;
+  return false;
+}
+
+void latticeDown(inout LatticeTexel lTexel) {
+  lTexel.range /= 2;
+  lTexel.counter = 0;
+}
+
+// will only be called if lTexel.counter = 3 -> texel is at topRight
+void latticeUp(inout LatticeTexel lTexel, LatticeTexel root) {
+  lTexel.lMin.x -= lTexel.range;
+  lTexel.lMin.y -= lTexel.range;
+  lTexel.range *= 2;
+  ivec2 temp = (lTexel.lMin - root.lMin) % (lTexel.range * 2);
+  lTexel.counter = 2 * (temp.x / lTexel.range) + temp.y / lTexel.range;
+}
+
+void latticeNext(inout LatticeTexel lTexel, LatticeTexel root) {
+  while (true) {
+    switch(lTexel.counter) {
+	// texelCoord = (0,1)
+    case 1:
+      lTexel.lMin += ivec2(lTexel.range, -lTexel.range);
+	  lTexel.counter++;
+      return;
+
+    // texelCoord = (1,1)
+    case 3:
+      latticeUp(lTexel, root);
+      continue;
+
+    // texelCoord = (0,0) or (1,0)
+    default:
+      lTexel.lMin.y += lTexel.range;
+	  lTexel.counter++;
+      return;
+	}
+  }
+}
+
+// acts similar as the "box" function but for lattice-space -> need to adjust for this purpose
+Aabb latticeBox(LatticeTexel lTexel, mat3x3 pt, mat3x3 nt) {
+  // 1. calculate affine form [h] of height range from minmax
+  // TODO: blending min and blending max of globalMinMax has to be calculated and used here -> blending is not convex!
+  vec2 minmax = globalMinMax * pcRay.displacementAmount;
+  vec4 affineHeight = 0.5 * vec4(minmax.x + minmax.y, 0, 0, minmax.y - minmax.x);
+
+  // 2. calculate affine form [uv] for the texel -> affine form layout: (xC, xU, xV, xK) -> see equation (12) of TFDM paper
+  // layout: (xC, xU, xV, xK)
+  vec4 x = vec4(lTexel.lMin.x + (lTexel.range / 2.0), lTexel.range / 2.0, 0, 0);
+  // layout: (xC, xU, xV, xK)
+  vec4 y = vec4(lTexel.lMin.y + (lTexel.range / 2.0), 0, lTexel.range / 2.0, 0);
+
+  // 3. calculate affine form [P] for position in 3D space
+  mat4x3 xy1 = mat4x3(x.x, y.x, 1,
+                      x.y, y.y, 0,
+                      x.z, y.z, 0,
+                      x.w, y.w, 0);
+
+  mat4x3 affinePos = pt * xy1;
+
+  // 4. calculate affine form [N] for normal in 3D space
+  mat4x3 affineNrm = nt * xy1;
+
+  // 5. calculate affine form [S] for displaced surface relative to given texel in 3D space -> [S] = [P] + [h] * [N]
+  vec4 row1 = affineFormDot(affineHeight, vec4(affineNrm[0][0], affineNrm[1][0], affineNrm[2][0], affineNrm[3][0]));
+  vec4 row2 = affineFormDot(affineHeight, vec4(affineNrm[0][1], affineNrm[1][1], affineNrm[2][1], affineNrm[3][1]));
+  vec4 row3 = affineFormDot(affineHeight, vec4(affineNrm[0][2], affineNrm[1][2], affineNrm[2][2], affineNrm[3][2]));
+  // the affine form [hn] = [h] * [N]
+  mat4x3 hn = mat4x3(row1.x, row2.x, row3.x,
+                     row1.y, row2.y, row3.y,
+                     row1.z, row2.z, row3.z,
+                     row1.w, row2.w, row3.w);
+  mat4x3 affineDisp = affinePos + hn;
+
+  // 6. calculate AABB from [S] according to equation (13) of TFDM paper
+  Aabb result;
+  // TODO: should maybe do this with vector operations in the future for better performance
+  result.minimum = vec3(affineDisp[0][0] - abs(affineDisp[1][0]) - abs(affineDisp[2][0]) - abs(affineDisp[3][0]),
+                        affineDisp[0][1] - abs(affineDisp[1][1]) - abs(affineDisp[2][1]) - abs(affineDisp[3][1]),
+                        affineDisp[0][2] - abs(affineDisp[1][2]) - abs(affineDisp[2][2]) - abs(affineDisp[3][2]));
+  result.maximum = vec3(affineDisp[0][0] + abs(affineDisp[1][0]) + abs(affineDisp[2][0]) + abs(affineDisp[3][0]),
+                        affineDisp[0][1] + abs(affineDisp[1][1]) + abs(affineDisp[2][1]) + abs(affineDisp[3][1]),
+                        affineDisp[0][2] + abs(affineDisp[1][2]) + abs(affineDisp[2][2]) + abs(affineDisp[3][2]));
+
+  return result;
+}
+
+// TODO: should act similar as the "outside" function but for lattice-space -> need to adjust for this purpose
+bool latticeOutside(LatticeTexel lTexel) {
+  // TODO: fix this code, produces wrong results
+  vec2 c  = lTexel.lMin + vec2(lTexel.range / 2.0);
+  float w = lTexel.range / 2.0;
+
+  vec2 p0 = lattice0 - c;
+  vec2 p1 = lattice1 - c;
+  vec2 p2 = lattice2 - c;
+
+  vec2 minimum = min(vec2(w, w), max(p0, max(p1, p2)));
+  vec2 maximum = max(vec2(-w, -w), min(p0, min(p1, p2)));
+
+  if (minimum.x <= maximum.x || minimum.y <= maximum.y) {
+    return true;
+  }
+
+  vec2 sign0 = vec2(n0.x / abs(n0.x), n0.y / abs(n0.y));
+  vec2 sign1 = vec2(n1.x / abs(n1.x), n1.y / abs(n1.y));
+  vec2 sign2 = vec2(n2.x / abs(n2.x), n2.y / abs(n2.y));
+  
+  float dot0 = dot(n0, p0 + sign0 * w);
+  float dot1 = dot(n1, p1 + sign1 * w);
+  float dot2 = dot(n2, p2 + sign2 * w);
+  if (dot0 <= 0 || dot1 <= 0 || dot2 <= 0) {
+    return true;
+  }
+
+  return false;
+}
+// TODO: should determine somewhere inside, which lattice-triangle is hit and then call the 2nd hierarchy from there
+//         -> if 2nd hierarchy hit is negative, continue with the 1st hierarchy again (lattice-triangle)
+float latticeTraversal(LatticeTexel root, mat2 latticeToWorld, float triangleSize) {
+  float tHit = -1;
+  LatticeTexel lTexel, endTexel;
+  lTexel = root;
+  endTexel = root;
+  latticeNext(endTexel, root);
+
+  mat3x3 pt = mat3x3(triangle.v0.pos, triangle.v1.pos, triangle.v2.pos) * lToB;
+  mat3x3 nt = mat3x3(triangle.v0.nrm, triangle.v1.nrm, triangle.v2.nrm) * lToB;
+  
+  while (!latticeTexelEquals(lTexel, endTexel)) {
+    if(latticeOutside(lTexel)) {
+	  latticeNext(lTexel, root);
+	  continue;
+	}
+	Aabb aabb = latticeBox(lTexel, pt, nt);
+	float hitAABB = hitAabb(aabb, ray);
+    // if AABB wasn't hit
+	if (!(hitAABB < -1.0 || hitAABB > -1.0)) {
+	  latticeNext(lTexel, root);
+	 // if smallest lattice texel is reached
+	} else if (lTexel.range <= 1) {
+      //         -> transform into world space and perform intersection test to determine in which triangle the hit is
+	  // TODO: traverse 2nd hierarchy (-> triforce traversal)
+      vec3 debugColor = vec3(lTexel.lMin, 0);
+      float hit = triforceTraversal(lTexel, debugColor, latticeToWorld, triangleSize);
+      //float hit = hitAABB;
+      if (hit >= 0 && (tHit < 0 || hit < tHit)) {
+        intPayload.debugColor = debugColor;
+        tHit = hit;
+        // TODO: set texture coordinates here
+      }
+      latticeNext(lTexel, root);
+	} else {
+	  latticeDown(lTexel);
+	}
+  }
+  // TODO: set tex coords somewhere
+  intPayload.worldNrm = vec3(0,1,0);
+  return tHit;
+}
+
 
 void main()
 {
@@ -383,6 +947,10 @@ void main()
   triangle.v2 = v2;
   triangle.txtOffset = mat.dispTextureID + dispObjDesc.i[gl_InstanceCustomIndexEXT].txtOffset;
 
+  while (textureSize(textureSamplers[nonuniformEXT(triangle.txtOffset)], MAX_LOD).x != 1) {
+    MAX_LOD++;
+  }
+
   // if a triangle is not displaced
   if (mat.dispTextureID < 0 || pcRay.displacementAmount <= 0)
   {
@@ -396,12 +964,12 @@ void main()
   }
 
   float newHit = -1;
-  if (pcRay.raymarching == 1) {
+  if (pcRay.raymarching == 0) {
     // fetch AABB
     Aabb aabb = Aabbs(objResource.aabbAddress).b[gl_PrimitiveID];
 
     newHit = raymarching(aabb);
-  } else {
+  } else if (pcRay.raymarching == 2) {
     // fetch UV to barycentrics matrix
     uvToB = UVtoBs(objResource.uvToBAddress).m[gl_PrimitiveID];
 
@@ -422,6 +990,93 @@ void main()
     n2 = vec2(n2.y, -n2.x);
 
     newHit = traversal(pcRay.targetLod);
+  } else {
+    /*
+    //TODO: remove this debug code
+    vec3 b1b2b3 = hitTriangle(triangle, ray);
+    float b1 = b1b2b3.x;
+    float b2 = b1b2b3.y;
+    newHit = b1b2b3.z;
+
+    float scroller = pcRay.blendingOffset * 0.07 + 0.55;
+
+    float denominator = sqrt(b1*b1 + b2*b2 + (1-b1-b2)*(1-b1-b2));
+    vec3 outColor = vec3(0,1,0);
+    if (denominator > scroller)
+      outColor = vec3(1,0,0);
+
+    intPayload.debugColor = outColor;
+
+
+    if (newHit > 0)
+      reportIntersectionEXT(newHit, KIND_TRIANGLE);
+    return;
+    */
+
+    // procedural TFDM
+
+    // calculate lattice coords for vertices
+    // TODO: rename lattice0, ... into l0 and use globally inside this shader
+    vec2 l0 = uvToLattice(v0.texCoord, pcRay.blendingOffset);
+    vec2 l1 = uvToLattice(v1.texCoord, pcRay.blendingOffset);
+    vec2 l2 = uvToLattice(v2.texCoord, pcRay.blendingOffset);
+
+    lattice0 = l0;
+    lattice1 = l1;
+    lattice2 = l2;
+
+    // lattice to barycentrics
+    lToB = mat3(l0.x, l0.y, 1,
+                l1.x, l1.y, 1,
+                l2.x, l2.y, 1);
+    lToB = inverse(lToB);
+	
+	// precalculate outward facing normals of triangle in lattice space for Triangle-square 2D collision
+	//   -> reusing n0, n1, n2
+	float signum = sign(determinant(mat3(l0.x, l1.x, l2.x,
+                                         l0.y, l1.y, l2.y,
+                                         1,    1,    1)));
+
+    n0 = signum * normalize(l1 - l0);
+    n1 = signum * normalize(l2 - l1);
+    n2 = signum * normalize(l0 - l2);
+	
+	// 90° clockwise rotation
+    n0 = vec2(n0.y, -n0.x);
+    n1 = vec2(n1.y, -n1.x);
+    n2 = vec2(n2.y, -n2.x);
+
+    vec2 lMin = min(l0, min(l1, l2));
+    vec2 lMax = max(l0, max(l1, l2));
+
+    ivec2 lAlignedMin  = ivec2(floor(lMin));
+    ivec2 lAlignedMax  = ivec2(ceil(lMax));
+    int range = max(lAlignedMax.x - lAlignedMin.x, lAlignedMax.y - lAlignedMin.y);
+    int power = 1;
+    while(power < range)
+      power *= 2;
+	
+	LatticeTexel root;
+	root.lMin = lAlignedMin;
+	root.range = power;
+	root.counter = 0;
+
+    int lod = 0;
+    while (textureSize(textureSamplers[nonuniformEXT(triangle.txtOffset)], lod).x != 1)
+      lod++;
+    globalMinMax = texelFetch(textureSamplers[nonuniformEXT(triangle.txtOffset)], ivec2(0,0), lod).yz;
+    globalMinMax.x = clamp(min(globalMinMax.x, (globalMinMax.x - 0.5) / (sqrt(3.0) / 3) + 0.5), 0, 1);
+    globalMinMax.y = clamp(max(globalMinMax.y, (globalMinMax.y - 0.5) / (sqrt(3.0) / 3) + 0.5), 0, 1);
+
+    intPayload.debugColor = vec3(1,0,1);
+
+    float triangleSize = 0.25;
+    float pi = 3.1415926;
+    mat2 latticeToWorld = mat2(triangleSize * cos(pi / 3), triangleSize, triangleSize * sin(pi / 3), 0);
+    mat2 worldToLattice = inverse(latticeToWorld);
+
+
+    newHit = latticeTraversal(root, latticeToWorld, triangleSize);
   }
   
   if (newHit > 0)

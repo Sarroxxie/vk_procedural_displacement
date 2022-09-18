@@ -7,4 +7,5 @@ struct intersectionPayload
 {
   vec3 worldNrm;
   vec2 texCoord;
+  vec3 debugColor;
 };

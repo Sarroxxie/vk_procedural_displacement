@@ -100,6 +100,8 @@ struct PushConstantRaster
 struct PushConstantRay
 {
   vec4  clearColor;
+  vec4  latticeToWorld;
+  vec4  worldToLattice;
   vec3  lightPosition;
   float lightIntensity;
   int   lightType;
@@ -109,6 +111,7 @@ struct PushConstantRay
   float blendingOffset;
   int   raymarching;
   int   targetLod;
+  float triangleSize;
   // \@author Josias
 };
 
