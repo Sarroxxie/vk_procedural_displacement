@@ -1,5 +1,5 @@
 # Procedural Displacement (Vulkan)
- The goal is to create tesselation free procedural displacement.
+ The goal is to create tesselation free procedural displacement. This implementation was created alongside a bachelor thesis (see the .pdf file). Forgive me for sloppy code, the program had to be ready in time and the coding style and performance suffered from it.
 
 ## Dependencies
 You will need several dependencies to compile and run this program.
