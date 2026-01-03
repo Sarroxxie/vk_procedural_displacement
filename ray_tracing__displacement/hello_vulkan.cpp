@@ -1219,6 +1219,7 @@ void HelloVulkan::compileShader(std::string path) {
   std::string command = "\"\"" + vulkanPath + "\\bin\\glslangValidator.exe\" -g --target-env vulkan1.2 -o \""
                         + winOutPath + "\" \"" + winInPath + "\"\"";
 
+
   // this suppresses the console output from the command (command differs on windows and unix)
   #if defined(_WIN32) || defined(_WIN64)
     command += " > nul";
@@ -1227,6 +1228,8 @@ void HelloVulkan::compileShader(std::string path) {
   #endif
 
   system(command.c_str());
+  updateLastWriteTime(shaderName);
+
 }
 
 // Checks if a shader file or an #include file for a shader got updated and recompiles affected shaders
@@ -1452,6 +1455,7 @@ void HelloVulkan::createMips(VkCommandBuffer cmdBuf, const std::string inputText
   m_stagingBuffers.push_back(stagingBuffer);
   m_stagingBufferMemory.push_back(stagingBufferMemory);
 
+  // TODO: check if this matters here
   // destroy the data buffer (that was on GPU) and free its memory
   //vkDestroyBuffer(m_device, stagingBuffer, nullptr);
   //vkFreeMemory(m_device, stagingBufferMemory, nullptr);
