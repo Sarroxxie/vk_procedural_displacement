@@ -1,0 +1,3 @@
+[submodule "libs/nvpro_core"]
+	path = libs/nvpro_core
+	url = https://github.com/Sarroxxie/nvpro_core.git
