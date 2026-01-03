@@ -4,15 +4,8 @@ project(vk_procedural_displacement)
 #--------------------------------------------------------------------------------------------------
 # look for nvpro_core 1) as a sub-folder 2) at some other locations
 # this cannot be put anywhere else since we still didn't find setup.cmake yet
-if(NOT BASE_DIRECTORY)
-
-  find_path(BASE_DIRECTORY
-    NAMES nvpro_core/cmake/setup.cmake
-    PATHS ${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_CURRENT_SOURCE_DIR}/.. ${CMAKE_CURRENT_SOURCE_DIR}/../.. ${CMAKE_CURRENT_SOURCE_DIR}/libs
-    REQUIRED
-    DOC "Directory containing nvpro_core"
-    )
-endif()
+set(BASE_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
+string(APPEND BASE_DIRECTORY "/libs")
 
 ## Various functions and macros REQUIRED
 if(EXISTS ${BASE_DIRECTORY}/nvpro_core/cmake/setup.cmake)

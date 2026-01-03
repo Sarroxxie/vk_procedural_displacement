@@ -3,3 +3,7 @@
 /out/build/x64-Debug
 /.vs
 /build
+
+# these are created by nvpro_core
+/libs/bin_x64
+/libs/downloaded_resources
