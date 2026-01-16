@@ -1,5 +1,5 @@
 # Procedural Displacement (Vulkan)
- The goal is to create tesselation free procedural displacement. This implementation was created alongside a bachelor thesis (see the .pdf file). Forgive me for sloppy code, the program had to be ready in time and the coding style and performance suffered from it in the final stages.
+Combines the papers [Tessellation-free displacement mapping for ray tracing](https://doi.org/10.1145/3478513.3480535) and [High-Performance By-Example Noise using a Histogram-Preserving Blending Operator](https://doi.org/10.1145/3233304) to create procedural displacement from an example texture without the need of pre-tessellation. This implementation was created alongside a bachelor thesis (see the .pdf file).
 
 ## Dependencies
 You will need several dependencies to compile and run this program.
